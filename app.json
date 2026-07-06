@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "News Centralizer",
+    "slug": "news-centralizer",
+    "version": "1.0.0",
+    "scheme": "newscentralizer",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "android": {
+      "package": "com.rairc.newscentralizer",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundColor": "#ffffff"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["android.permission.POST_NOTIFICATIONS"],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "newscentralizer" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#ffffff"
+        }
+      ],
+      "./plugins/withNewsCentralizerAndroidWidget.js",
+      "./plugins/withNetworkSecurity.js",
+      "./plugins/withAndroidBuildProps.js"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
