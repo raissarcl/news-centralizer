@@ -9,18 +9,33 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { feedInFolder } from '@/lib/feeds/feedFolders';
-import { countUnreadInFolder, useFeedsStore } from '@/store/feeds';
+import { feedInFolder, isInboxFolderId } from '@/lib/feeds/feedFolders';
+import {
+  countUnreadInFolder,
+  foldersInSpace,
+  useFeedsStore,
+} from '@/store/feeds';
+import { useSettingsStore } from '@/store/settings';
+import { resolveActiveSpaceId } from '@/lib/spaces';
 import { useTheme } from '@/theme';
 import { t } from '@/lib/i18n';
 
 export function FoldersScreen() {
   const { tokens } = useTheme();
   const router = useRouter();
-  const folders = useFeedsStore((s) => s.folders);
+  const allFolders = useFeedsStore((s) => s.folders);
   const feeds = useFeedsStore((s) => s.feeds);
   const items = useFeedsStore((s) => s.items);
+  const spaces = useFeedsStore((s) => s.spaces);
   const removeFolder = useFeedsStore((s) => s.removeFolder);
+  const activeSpaceId = useSettingsStore((s) =>
+    resolveActiveSpaceId(s.settings.activeSpaceId, spaces)
+  );
+
+  const folders = useMemo(
+    () => foldersInSpace(allFolders, activeSpaceId),
+    [allFolders, activeSpaceId]
+  );
 
   const sortedFolders = useMemo(
     () => [...folders].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -28,7 +43,7 @@ export function FoldersScreen() {
   );
 
   const confirmDeleteFolder = (folderId: string, folderName: string) => {
-    if (folderId === 'inbox') return;
+    if (isInboxFolderId(folderId)) return;
     Alert.alert(folderName, t.deleteFolderConfirm, [
       { text: t.cancel, style: 'cancel' },
       {
@@ -47,7 +62,7 @@ export function FoldersScreen() {
         onPress: () => router.push(`/folder/${folderId}/feeds`),
       },
     ];
-    if (folderId !== 'inbox') {
+    if (!isInboxFolderId(folderId)) {
       buttons.push({
         text: t.renameFolder,
         onPress: () => router.push(`/folder/${folderId}/settings`),

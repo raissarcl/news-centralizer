@@ -6,6 +6,7 @@ import {
   type Folder,
   type PersistedBlob,
   type Settings,
+  type Space,
   type Tag,
 } from '../types';
 import { validateFeedUrl } from '../lib/security/urls';
@@ -13,8 +14,22 @@ import { ENGBLOGS_STARTER_OPML } from '../data/engblogsStarter';
 import { flattenOpmlFeeds, parseOpml } from '../lib/opml';
 import { createId } from '../lib/id';
 import { sortItemsByPublishedDesc } from '../lib/items/sortItems';
-import { dedupeItemsByLink, normalizeFeedUrl, normalizeItemLink } from '../lib/items/dedupeItems';
-import { normalizeFeedFolderIds } from '../lib/feeds/feedFolders';
+import { dedupeItemsByLink, normalizeFeedUrl } from '../lib/items/dedupeItems';
+import {
+  inboxFolderId,
+  isInboxFolderId,
+  LEGACY_INBOX_FOLDER_ID,
+  normalizeFeedFolderIds,
+} from '../lib/feeds/feedFolders';
+import {
+  COMPUTING_SPACE_ID,
+  ensureDefaultSpaces,
+  GENERAL_SPACE_ID,
+  getDefaultSpaces,
+  resolveActiveSpaceId,
+} from '../lib/spaces';
+
+const INBOX_FOLDER_NAME = 'Caixa de entrada';
 
 function normalizeSettings(raw: Partial<Settings> | undefined): Settings {
   const merged: Settings = { ...DEFAULT_SETTINGS, ...(raw ?? {}) };
@@ -38,6 +53,23 @@ function normalizeSettings(raw: Partial<Settings> | undefined): Settings {
         ? merged.lastExportAt
         : null,
     seeded: merged.seeded === true,
+    seededGeneral: merged.seededGeneral === true,
+    activeSpaceId:
+      typeof merged.activeSpaceId === 'string' && merged.activeSpaceId.length > 0
+        ? merged.activeSpaceId
+        : DEFAULT_SETTINGS.activeSpaceId,
+  };
+}
+
+function normalizeSpace(raw: unknown): Space | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const x = raw as Record<string, unknown>;
+  if (typeof x.id !== 'string' || typeof x.name !== 'string') return null;
+  return {
+    id: x.id,
+    name: x.name,
+    icon: typeof x.icon === 'string' ? x.icon : undefined,
+    sortOrder: typeof x.sortOrder === 'number' ? x.sortOrder : 0,
   };
 }
 
@@ -47,11 +79,16 @@ function normalizeFeed(raw: unknown, allowHttp: boolean): FeedSource | null {
   if (typeof x.id !== 'string' || typeof x.url !== 'string') return null;
   if (!validateFeedUrl(x.url, { allowHttp }).ok) return null;
 
+  const spaceId =
+    typeof x.spaceId === 'string' && x.spaceId.length > 0
+      ? x.spaceId
+      : COMPUTING_SPACE_ID;
+
   const rawFolderIds = Array.isArray(x.folderIds)
     ? (x.folderIds as unknown[]).filter((id): id is string => typeof id === 'string')
     : typeof x.folderId === 'string'
       ? [x.folderId]
-      : ['inbox'];
+      : [inboxFolderId(spaceId)];
 
   return {
     id: x.id,
@@ -59,7 +96,8 @@ function normalizeFeed(raw: unknown, allowHttp: boolean): FeedSource | null {
     url: x.url,
     siteUrl: typeof x.siteUrl === 'string' ? x.siteUrl : undefined,
     favicon: typeof x.favicon === 'string' ? x.favicon : undefined,
-    folderIds: normalizeFeedFolderIds(rawFolderIds),
+    spaceId,
+    folderIds: normalizeFeedFolderIds(rawFolderIds, spaceId),
     tagIds: Array.isArray(x.tagIds)
       ? (x.tagIds as unknown[]).filter((t): t is string => typeof t === 'string')
       : [],
@@ -107,9 +145,14 @@ function normalizeFolder(raw: unknown): Folder | null {
   if (!raw || typeof raw !== 'object') return null;
   const x = raw as Record<string, unknown>;
   if (typeof x.id !== 'string' || typeof x.name !== 'string') return null;
+  const spaceId =
+    typeof x.spaceId === 'string' && x.spaceId.length > 0
+      ? x.spaceId
+      : COMPUTING_SPACE_ID;
   return {
-    id: x.id,
+    id: x.id === LEGACY_INBOX_FOLDER_ID ? inboxFolderId(spaceId) : x.id,
     name: x.name,
+    spaceId,
     icon: typeof x.icon === 'string' ? x.icon : undefined,
     sortOrder: typeof x.sortOrder === 'number' ? x.sortOrder : 0,
     retentionDays:
@@ -126,6 +169,10 @@ function normalizeTag(raw: unknown): Tag | null {
   return {
     id: x.id,
     name: x.name,
+    spaceId:
+      typeof x.spaceId === 'string' && x.spaceId.length > 0
+        ? x.spaceId
+        : COMPUTING_SPACE_ID,
     color: typeof x.color === 'string' ? x.color : undefined,
   };
 }
@@ -146,7 +193,11 @@ export function mergeEngBlogsIntoBlob(blob: PersistedBlob): PersistedBlob {
   );
   const existingUrls = new Set(blob.feeds.map((f) => f.url));
   let folders = [...blob.folders];
-  const folderIdByName = new Map(folders.map((f) => [f.name, f.id]));
+  const folderIdByName = new Map(
+    folders
+      .filter((f) => f.spaceId === COMPUTING_SPACE_ID)
+      .map((f) => [f.name, f.id])
+  );
   const feeds = [...blob.feeds];
   let added = 0;
 
@@ -158,6 +209,7 @@ export function mergeEngBlogsIntoBlob(blob: PersistedBlob): PersistedBlob {
       const folder: Folder = {
         id: slugifyFolder(folderName) || createId('folder'),
         name: folderName,
+        spaceId: COMPUTING_SPACE_ID,
         sortOrder: folders.length,
       };
       folders = [...folders, folder];
@@ -169,7 +221,8 @@ export function mergeEngBlogsIntoBlob(blob: PersistedBlob): PersistedBlob {
       title: input.title,
       url: input.url,
       siteUrl: input.siteUrl,
-      folderIds: normalizeFeedFolderIds([folderId]),
+      spaceId: COMPUTING_SPACE_ID,
+      folderIds: normalizeFeedFolderIds([folderId], COMPUTING_SPACE_ID),
       tagIds: [],
       enabled: true,
     });
@@ -213,13 +266,109 @@ export function removeBrokenHnAiFeed(blob: PersistedBlob): PersistedBlob {
   return removeFeedsByUrl(blob, BROKEN_HN_AI_URL);
 }
 
+function migrateToSpaces(blob: PersistedBlob): PersistedBlob {
+  const spaces = ensureDefaultSpaces(blob.spaces);
+  const computingInboxId = inboxFolderId(COMPUTING_SPACE_ID);
+  const generalInboxId = inboxFolderId(GENERAL_SPACE_ID);
+
+  let folders = blob.folders.map((folder) => {
+    const id =
+      folder.id === LEGACY_INBOX_FOLDER_ID ? computingInboxId : folder.id;
+    return {
+      ...folder,
+      id,
+      spaceId: folder.spaceId || COMPUTING_SPACE_ID,
+      name: isInboxFolderId(id) ? INBOX_FOLDER_NAME : folder.name,
+    };
+  });
+
+  if (!folders.some((f) => f.id === computingInboxId)) {
+    folders = [
+      {
+        id: computingInboxId,
+        name: INBOX_FOLDER_NAME,
+        spaceId: COMPUTING_SPACE_ID,
+        sortOrder: -1,
+      },
+      ...folders,
+    ];
+  }
+
+  if (!folders.some((f) => f.id === generalInboxId)) {
+    folders = [
+      ...folders,
+      {
+        id: generalInboxId,
+        name: INBOX_FOLDER_NAME,
+        spaceId: GENERAL_SPACE_ID,
+        sortOrder: -1,
+      },
+    ];
+  }
+
+  const folderIdsInSpace = new Map<string, Set<string>>();
+  for (const folder of folders) {
+    const set = folderIdsInSpace.get(folder.spaceId) ?? new Set<string>();
+    set.add(folder.id);
+    folderIdsInSpace.set(folder.spaceId, set);
+  }
+
+  const feeds = blob.feeds.map((feed) => {
+    const spaceId = feed.spaceId || COMPUTING_SPACE_ID;
+    const allowed = folderIdsInSpace.get(spaceId) ?? new Set<string>();
+    const inboxId = inboxFolderId(spaceId);
+    const mapped = getFeedFolderIdsFromLegacy(feed)
+      .map((id) => (id === LEGACY_INBOX_FOLDER_ID ? computingInboxId : id))
+      .filter((id) => allowed.has(id) || id === inboxId);
+    return {
+      ...feed,
+      spaceId,
+      folderIds: normalizeFeedFolderIds(mapped, spaceId),
+    };
+  });
+
+  const tags = blob.tags.map((tag) => ({
+    ...tag,
+    spaceId: tag.spaceId || COMPUTING_SPACE_ID,
+  }));
+
+  const settings: Settings = {
+    ...blob.settings,
+    activeSpaceId: resolveActiveSpaceId(blob.settings.activeSpaceId, spaces),
+    seededGeneral: blob.settings.seededGeneral === true,
+  };
+
+  return {
+    ...blob,
+    spaces,
+    folders,
+    feeds,
+    tags,
+    settings,
+  };
+}
+
 export function migrateBlob(raw: unknown): PersistedBlob {
   if (!raw || typeof raw !== 'object') {
     return {
       schemaVersion: CURRENT_SCHEMA_VERSION,
+      spaces: getDefaultSpaces(),
       feeds: [],
       items: [],
-      folders: [],
+      folders: [
+        {
+          id: inboxFolderId(COMPUTING_SPACE_ID),
+          name: INBOX_FOLDER_NAME,
+          spaceId: COMPUTING_SPACE_ID,
+          sortOrder: -1,
+        },
+        {
+          id: inboxFolderId(GENERAL_SPACE_ID),
+          name: INBOX_FOLDER_NAME,
+          spaceId: GENERAL_SPACE_ID,
+          sortOrder: -1,
+        },
+      ],
       tags: [],
       settings: { ...DEFAULT_SETTINGS },
     };
@@ -244,9 +393,13 @@ export function migrateBlob(raw: unknown): PersistedBlob {
   const tags = Array.isArray(blob.tags)
     ? blob.tags.map(normalizeTag).filter((t): t is Tag => t !== null)
     : [];
+  const spaces = Array.isArray(blob.spaces)
+    ? blob.spaces.map(normalizeSpace).filter((s): s is Space => s !== null)
+    : [];
 
   let migrated: PersistedBlob = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
+    spaces,
     feeds,
     items: sortItemsByPublishedDesc(items),
     folders,
@@ -262,7 +415,9 @@ export function migrateBlob(raw: unknown): PersistedBlob {
     migrated = {
       ...migrated,
       folders: migrated.folders.map((f) =>
-        f.id === 'inbox' ? { ...f, name: 'Caixa de entrada' } : f
+        isInboxFolderId(f.id) || f.id === LEGACY_INBOX_FOLDER_ID
+          ? { ...f, name: INBOX_FOLDER_NAME }
+          : f
       ),
     };
   }
@@ -276,7 +431,10 @@ export function migrateBlob(raw: unknown): PersistedBlob {
       ...migrated,
       feeds: migrated.feeds.map((feed) => ({
         ...feed,
-        folderIds: normalizeFeedFolderIds(getFeedFolderIdsFromLegacy(feed)),
+        folderIds: normalizeFeedFolderIds(
+          getFeedFolderIdsFromLegacy(feed),
+          feed.spaceId
+        ),
       })),
     };
   }
@@ -285,7 +443,37 @@ export function migrateBlob(raw: unknown): PersistedBlob {
     migrated = removeBrokenHnAiFeed(migrated);
   }
 
+  // Always ensure spaces/inboxes exist (v7 migration + repair of incomplete blobs).
+  migrated = migrateToSpaces(migrated);
+  migrated = {
+    ...migrated,
+    feeds: rewriteKnownBrokenFeedUrls(migrated.feeds),
+  };
+
   return migrated;
+}
+
+/** Upstream emptied or moved; keep installs working without re-seed. */
+const BROKEN_FEED_URL_REWRITES: Record<string, string> = {
+  'https://oglobo.globo.com/rss.xml': 'https://pox.globo.com/rss/oglobo/',
+  'https://oglobo.globo.com/rss/oglobo': 'https://pox.globo.com/rss/oglobo/',
+  'https://oglobo.globo.com/rss/oglobo/': 'https://pox.globo.com/rss/oglobo/',
+  'https://gmgall.github.io/feeds/bbc-brasil-internacional.xml':
+    'https://feeds.bbci.co.uk/portuguese/rss.xml',
+};
+
+function rewriteKnownBrokenFeedUrls(feeds: FeedSource[]): FeedSource[] {
+  return feeds.map((feed) => {
+    const next = BROKEN_FEED_URL_REWRITES[feed.url];
+    if (!next || next === feed.url) return feed;
+    return {
+      ...feed,
+      url: next,
+      etag: undefined,
+      lastModified: undefined,
+      lastError: undefined,
+    };
+  });
 }
 
 function getFeedFolderIdsFromLegacy(
@@ -293,5 +481,5 @@ function getFeedFolderIdsFromLegacy(
 ): string[] {
   if (feed.folderIds?.length) return feed.folderIds;
   if (typeof feed.folderId === 'string') return [feed.folderId];
-  return ['inbox'];
+  return [inboxFolderId(feed.spaceId || COMPUTING_SPACE_ID)];
 }

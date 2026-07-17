@@ -4,6 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { format } from 'date-fns';
 import { Alert } from 'react-native';
 import type { PersistedBlob } from '../types';
+import { CURRENT_SCHEMA_VERSION } from '../types';
 import { migrateBlob } from '../store/migrate';
 import { useSettingsStore } from '../store/settings';
 import { useFeedsStore } from '../store/feeds';
@@ -15,6 +16,7 @@ import {
   capFeedInputs,
 } from './security/importLimits';
 import { t } from './i18n';
+import { resolveActiveSpaceId } from './spaces';
 
 function importResultMessage(added: number, skipped: number, base: string): string {
   if (skipped > 0) {
@@ -27,7 +29,8 @@ export async function buildExportBlob(): Promise<PersistedBlob> {
   const feedsState = useFeedsStore.getState();
   const settings = useSettingsStore.getState().settings;
   return {
-    schemaVersion: 1,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    spaces: feedsState.spaces,
     feeds: feedsState.feeds,
     items: feedsState.items,
     folders: feedsState.folders,
@@ -77,6 +80,7 @@ export async function importBackupJson(): Promise<boolean> {
     const parsed = JSON.parse(raw);
     const blob = migrateBlob(parsed);
     await useFeedsStore.getState().replaceAll({
+      spaces: blob.spaces,
       feeds: blob.feeds,
       items: blob.items,
       folders: blob.folders,
@@ -93,9 +97,15 @@ export async function importBackupJson(): Promise<boolean> {
 
 export async function exportOpml(): Promise<void> {
   const { feeds, folders } = useFeedsStore.getState();
-  const folderGroups = folders.map((folder) => ({
+  const activeSpaceId = resolveActiveSpaceId(
+    useSettingsStore.getState().settings.activeSpaceId,
+    useFeedsStore.getState().spaces
+  );
+  const spaceFolders = folders.filter((f) => f.spaceId === activeSpaceId);
+  const spaceFeeds = feeds.filter((f) => f.spaceId === activeSpaceId);
+  const folderGroups = spaceFolders.map((folder) => ({
     name: folder.name,
-    feeds: feeds
+    feeds: spaceFeeds
       .filter((f) => feedInFolder(f, folder.id))
       .map((f) => ({
         title: f.title,
@@ -104,8 +114,8 @@ export async function exportOpml(): Promise<void> {
       })),
   }));
 
-  const orphanFeeds = feeds.filter(
-    (f) => !folders.some((folder) => feedInFolder(f, folder.id))
+  const orphanFeeds = spaceFeeds.filter(
+    (f) => !spaceFolders.some((folder) => feedInFolder(f, folder.id))
   );
   if (orphanFeeds.length > 0) {
     folderGroups.push({

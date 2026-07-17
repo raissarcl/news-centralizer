@@ -128,6 +128,18 @@ export function validateItemLink(
   return baseValidate(raw, schemes);
 }
 
+/**
+ * Folha wraps article URLs as `…/rss091/*https://www1.folha…`.
+ * Prefer the embedded canonical URL when present and valid.
+ */
+export function unwrapEmbeddedHttpUrl(link: string): string {
+  const marker = link.indexOf('*http');
+  if (marker === -1) return link;
+  const embedded = link.slice(marker + 1).trim();
+  const validated = validateItemLink(embedded);
+  return validated.ok ? validated.url.href : link;
+}
+
 export function feedUrlErrorMessage(error: UrlValidationError): string {
   switch (error) {
     case 'invalid_scheme':

@@ -28,6 +28,7 @@ export function selectVisibleItems(state: {
   selectedTagId: string | null;
   selectedFolderId: string | null;
   selectedFeedIds?: string[];
+  spaceId?: string | null;
 }): FeedItem[] {
   const feedById = new Map(state.feeds.map((f) => [f.id, f]));
   const q = state.searchQuery.trim().toLowerCase();
@@ -37,6 +38,7 @@ export function selectVisibleItems(state: {
     if (!isPublishedAtDisplayable(item.publishedAt)) return false;
     const feed = feedById.get(item.feedId);
     if (!feed || !feed.enabled) return false;
+    if (state.spaceId && feed.spaceId !== state.spaceId) return false;
     if (state.selectedFolderId && !feedInFolder(feed, state.selectedFolderId)) {
       return false;
     }

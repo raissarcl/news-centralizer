@@ -36,6 +36,17 @@ export function SourceDetailScreen() {
   const toggleFeedFolder = useFeedsStore((s) => s.toggleFeedFolder);
 
   const feed = feeds.find((f) => f.id === id);
+  const spaceFolders = useMemo(
+    () =>
+      folders
+        .filter((f) => !feed || f.spaceId === feed.spaceId)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [folders, feed]
+  );
+  const spaceTags = useMemo(
+    () => tags.filter((tag) => !feed || tag.spaceId === feed.spaceId),
+    [tags, feed]
+  );
   const sourceItems = useMemo(
     () => filterItemsForFeed(items, id!),
     [items, id]
@@ -102,7 +113,7 @@ export function SourceDetailScreen() {
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.tagsRow}>
-              {folders.map((folder) => {
+              {spaceFolders.map((folder) => {
                 const active = feedInFolder(feed, folder.id);
                 return (
                   <Pressable
@@ -139,7 +150,7 @@ export function SourceDetailScreen() {
             {t.tags}
           </Text>
           <View style={styles.tagsRow}>
-            {tags.map((tag) => {
+            {spaceTags.map((tag) => {
               const active = feed.tagIds.includes(tag.id);
               return (
                 <Pressable

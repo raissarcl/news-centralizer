@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFeedsStore } from '@/store/feeds';
+import { isInboxFolderId } from '@/lib/feeds/feedFolders';
 import { useTheme } from '@/theme';
 import { t } from '@/lib/i18n';
 
@@ -46,7 +47,7 @@ export function FolderSettingsScreen() {
     );
   }
 
-  const isInbox = folder.id === 'inbox';
+  const isInbox = isInboxFolderId(folder.id);
 
   const saveRename = async () => {
     const trimmed = nameDraft.trim();

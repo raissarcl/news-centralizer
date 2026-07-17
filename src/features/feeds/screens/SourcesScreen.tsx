@@ -13,13 +13,14 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useFeedsStore } from '@/store/feeds';
+import { useFeedsStore, feedsInSpace, foldersInSpace } from '@/store/feeds';
 import { useSettingsStore } from '@/store/settings';
+import { resolveActiveSpaceId } from '@/lib/spaces';
 import { useTheme, getSwitchProps } from '@/theme';
 import { t } from '@/lib/i18n';
 import { resolveFeedFavicon } from '@/lib/favicon';
 import { FeedFolderMembershipSwitch } from '@/features/feeds/components/FeedFolderMembershipSwitch';
-import { formatFeedFolderNames } from '@/lib/feeds/feedFolders';
+import { formatFeedFolderNames, inboxFolderId } from '@/lib/feeds/feedFolders';
 import { feedHostLabel } from '@/lib/feeds/feedHostLabel';
 import { computeFeedHealth, isFeedPausedNow } from '@/lib/feeds/feedHealth';
 import { isRssHubUrl, suggestRssHubUrl } from '@/lib/rsshub';
@@ -46,8 +47,9 @@ export function SourcesScreen() {
   const switchProps = getSwitchProps(tokens);
   const router = useRouter();
   const { addToFolder } = useLocalSearchParams<{ addToFolder?: string }>();
-  const feeds = useFeedsStore((s) => s.feeds);
-  const folders = useFeedsStore((s) => s.folders);
+  const allFeeds = useFeedsStore((s) => s.feeds);
+  const allFolders = useFeedsStore((s) => s.folders);
+  const spaces = useFeedsStore((s) => s.spaces);
   const toggleFeedEnabled = useFeedsStore((s) => s.toggleFeedEnabled);
   const addFeed = useFeedsStore((s) => s.addFeed);
   const removeFeed = useFeedsStore((s) => s.removeFeed);
@@ -55,6 +57,18 @@ export function SourcesScreen() {
   const resumeAllPausedFeeds = useFeedsStore((s) => s.resumeAllPausedFeeds);
   const updateSettings = useSettingsStore((s) => s.update);
   const rssHubAcknowledged = useSettingsStore((s) => s.settings.rssHubAcknowledged);
+  const activeSpaceId = useSettingsStore((s) =>
+    resolveActiveSpaceId(s.settings.activeSpaceId, spaces)
+  );
+
+  const feeds = useMemo(
+    () => feedsInSpace(allFeeds, activeSpaceId),
+    [allFeeds, activeSpaceId]
+  );
+  const folders = useMemo(
+    () => foldersInSpace(allFolders, activeSpaceId),
+    [allFolders, activeSpaceId]
+  );
 
   const [showForm, setShowForm] = useState(false);
   const [url, setUrl] = useState('');
@@ -81,7 +95,8 @@ export function SourcesScreen() {
   const hasHealthIssues = health.errors > 0 || health.paused > 0;
 
   const filteredFolder = folderFilterId ? folderById.get(folderFilterId) : undefined;
-  const selectedFolderId = folderId || folderFilterId || sortedFolders[0]?.id || 'inbox';
+  const selectedFolderId =
+    folderId || folderFilterId || sortedFolders[0]?.id || inboxFolderId(activeSpaceId);
   const addButtonLabel = filteredFolder
     ? t.addFeedToFolder(filteredFolder.name)
     : t.addFeed;
@@ -93,6 +108,16 @@ export function SourcesScreen() {
     setShowForm(true);
     router.setParams({ addToFolder: '' });
   }, [addToFolder, router]);
+
+  useEffect(() => {
+    setFolderFilterId((current) => {
+      if (!current) return current;
+      return folders.some((f) => f.id === current) ? current : null;
+    });
+    setFolderId((current) =>
+      folders.some((f) => f.id === current) ? current : ''
+    );
+  }, [activeSpaceId, folders]);
 
   const openAddForm = () => {
     if (folderFilterId) setFolderId(folderFilterId);

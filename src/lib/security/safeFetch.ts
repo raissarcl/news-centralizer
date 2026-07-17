@@ -1,3 +1,4 @@
+import { decodeFeedBody } from '../rss/decodeFeedBody';
 import { validateFeedUrl, type FeedUrlOptions } from './urls';
 
 export const FETCH_LIMITS = {
@@ -101,14 +102,18 @@ export async function safeFetch(
         }
       }
 
-      const text = await response.text();
-      if (text.length > FETCH_LIMITS.maxBytes) {
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength > FETCH_LIMITS.maxBytes) {
         return {
           ok: false,
           status: response.status,
           error: `Resposta excede ${FETCH_LIMITS.maxBytes} bytes`,
         };
       }
+      const text = decodeFeedBody(
+        new Uint8Array(buffer),
+        response.headers.get('content-type')
+      );
       return {
         ok: true,
         status: response.status,

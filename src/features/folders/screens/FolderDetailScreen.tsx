@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FeedItemRow, openItemLink } from '@/features/timeline/components/FeedItemRow';
 import { FeedItemListToolbar } from '@/features/timeline/components/FeedItemListToolbar';
 import { TimelineFilterPanel } from '@/features/timeline/components/TimelineFilterPanel';
-import { feedInFolder } from '@/lib/feeds/feedFolders';
+import { feedInFolder, isInboxFolderId } from '@/lib/feeds/feedFolders';
 import { buildActiveFilterSummary } from '@/lib/feeds/filterLabels';
 import { countUnreadInFolder, selectVisibleItems, useFeedsStore } from '@/store/feeds';
 import { useTheme } from '@/theme';
@@ -48,6 +48,11 @@ export function FolderDetailScreen() {
     [feeds, id]
   );
 
+  const spaceTags = useMemo(
+    () => (folder ? tags.filter((tag) => tag.spaceId === folder.spaceId) : tags),
+    [tags, folder]
+  );
+
   const visibleItems = useMemo(
     () =>
       folder
@@ -60,6 +65,7 @@ export function FolderDetailScreen() {
             selectedTagId,
             selectedFolderId: folder.id,
             selectedFeedIds,
+            spaceId: folder.spaceId,
           })
         : [],
     [folder, items, feeds, timelineFilter, timelinePeriod, searchQuery, selectedTagId, selectedFeedIds]
@@ -83,10 +89,10 @@ export function FolderDetailScreen() {
         timelinePeriod,
         selectedTagId,
         selectedFeedIds,
-        tags,
+        tags: spaceTags,
         feeds: folderFeeds,
       }),
-    [timelinePeriod, selectedTagId, selectedFeedIds, tags, folderFeeds]
+    [timelinePeriod, selectedTagId, selectedFeedIds, spaceTags, folderFeeds]
   );
 
   const clearSecondaryFilters = () => {
@@ -111,7 +117,7 @@ export function FolderDetailScreen() {
         onPress: () => router.push(`/folder/${folder.id}/feeds`),
       },
     ];
-    if (folder.id !== 'inbox') {
+    if (!isInboxFolderId(folder.id)) {
       buttons.push({
         text: t.folderSettings,
         onPress: () => router.push(`/folder/${folder.id}/settings`),
@@ -195,8 +201,8 @@ export function FolderDetailScreen() {
         selectedFolderId={null}
         selectedTagId={selectedTagId}
         selectedFeedIds={selectedFeedIds}
-        folders={folders}
-        tags={tags}
+        folders={folders.filter((f) => f.spaceId === folder.spaceId)}
+        tags={spaceTags}
         feeds={folderFeeds}
         onPeriodChange={setTimelinePeriod}
         onFolderChange={() => {}}

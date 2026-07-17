@@ -5,6 +5,7 @@ import { dedupeItemsByLink } from '../src/lib/items/dedupeItems';
 import { isPublishedAtDisplayable } from '../src/lib/items/publishDate';
 import { sortItemsByPublishedDesc } from '../src/lib/items/sortItems';
 import { applyRetention } from '../src/lib/rss/fetchFeed';
+import { decodeFeedBody } from '../src/lib/rss/decodeFeedBody';
 import { parseFeedXml } from '../src/lib/rss/parseFeedXml';
 import { cleanFeedText } from '../src/lib/text/cleanFeedText';
 import { migrateBlob, mergeEngBlogsIntoBlob } from '../src/store/migrate';
@@ -34,6 +35,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     id,
     title: `Feed ${id}`,
     url: `https://example.com/feed/${id}.xml`,
+    spaceId: 'computing',
     folderIds: ids,
     tagIds: [],
     enabled: true,
@@ -218,10 +220,64 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.equal(entries[0].summary, 'Summary');
 }
 
+// parseFeedXml supports RSS 1.0 / RDF (Deutsche Welle style)
+{
+  const rdfXml = `<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+ <channel rdf:about="https://example.com/feed">
+  <title>Channel</title>
+ </channel>
+ <item rdf:about="https://example.com/a">
+  <title>RDF Title</title>
+  <link>https://example.com/a</link>
+  <description>RDF summary</description>
+  <dc:date>2020-01-01T12:00:00Z</dc:date>
+ </item>
+ <item rdf:about="https://example.com/future">
+  <title>Future RDF</title>
+  <link>https://example.com/future</link>
+  <dc:date>2099-01-01T12:00:00Z</dc:date>
+ </item>
+</rdf:RDF>`;
+  const entries = parseFeedXml(rdfXml);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].title, 'RDF Title');
+  assert.equal(entries[0].link, 'https://example.com/a');
+  assert.equal(entries[0].summary, 'RDF summary');
+}
+
+// parseFeedXml unwraps Folha redirect links (*https://…)
+{
+  const rssXml = `<?xml version="1.0"?><rss><channel><item>
+    <title>Folha</title>
+    <link>https://redir.folha.com.br/redir/online/poder/rss091/*https://www1.folha.uol.com.br/poder/2026/07/exemplo.shtml</link>
+    <guid>folha-1</guid>
+    <pubDate>Wed, 01 Jan 2020 12:00:00 GMT</pubDate>
+  </item></channel></rss>`;
+  const entries = parseFeedXml(rssXml);
+  assert.equal(entries.length, 1);
+  assert.equal(
+    entries[0].link,
+    'https://www1.folha.uol.com.br/poder/2026/07/exemplo.shtml'
+  );
+}
+
+// decodeFeedBody respects XML encoding declaration (Folha ISO-8859-1)
+{
+  const xml =
+    '<?xml version="1.0" encoding="ISO-8859-1"?><rss><channel><title>São Paulo</title></channel></rss>';
+  const bytes = Uint8Array.from(Buffer.from(xml, 'latin1'));
+  const text = decodeFeedBody(bytes, 'text/xml');
+  assert.match(text, /São Paulo/);
+  assert.equal(text.includes('\uFFFD'), false);
+}
+
 // applyRetention
 {
   const feeds = [feed('f1')];
-  const folders: Folder[] = [{ id: 'news', name: 'News', sortOrder: 0 }];
+  const folders: Folder[] = [
+    { id: 'news', name: 'News', spaceId: 'computing', sortOrder: 0 },
+  ];
   const old = subDays(new Date(), 40).toISOString();
   const recent = new Date().toISOString();
   const kept = applyRetention(
@@ -238,6 +294,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
 {
   const blob: PersistedBlob = {
     schemaVersion: 1,
+    spaces: [],
     feeds: [],
     items: [],
     folders: [],
@@ -252,6 +309,8 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
       rssHubAcknowledged: false,
       lastExportAt: null,
       seeded: false,
+      seededGeneral: false,
+      activeSpaceId: 'computing',
     },
   };
   const merged = mergeEngBlogsIntoBlob(blob);
@@ -259,7 +318,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.ok(merged.folders.some((f) => f.name === 'Eng Blogs'));
 }
 
-// migrate v3 inbox name
+// migrate v3 inbox name + v7 spaces
 {
   const migrated = migrateBlob({
     schemaVersion: 1,
@@ -269,8 +328,13 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     tags: [],
     settings: {},
   });
-  assert.equal(migrated.schemaVersion, 6);
-  assert.equal(migrated.folders.find((f) => f.id === 'inbox')?.name, 'Caixa de entrada');
+  assert.equal(migrated.schemaVersion, 7);
+  assert.equal(
+    migrated.folders.find((f) => f.id === 'inbox:computing')?.name,
+    'Caixa de entrada'
+  );
+  assert.ok(migrated.folders.some((f) => f.id === 'inbox:general'));
+  assert.equal(migrated.settings.activeSpaceId, 'computing');
 }
 
 // migrate v4 removes HN Newest and dedupes items
@@ -309,6 +373,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   });
   assert.equal(migrated.feeds.length, 1);
   assert.equal(migrated.feeds[0].id, 'hn-front');
+  assert.equal(migrated.feeds[0].spaceId, 'computing');
   assert.equal(migrated.items.length, 1);
 }
 

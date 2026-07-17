@@ -35,9 +35,9 @@ export const t = {
   retentionDays: 'Manter itens por (dias)',
   retentionDaysHint:
     'Remove itens mais antigos da Timeline. Pastas como Papers podem ter retenção menor (7 dias).',
-  refreshOnOpen: 'Atualizar ao abrir o app',
+  refreshOnOpen: 'Atualizar ao abrir / trocar espaço',
   refreshOnOpenHint:
-    'Busca feeds ativos ao abrir o app. Pode usar dados móveis.',
+    'Busca feeds do espaço ativo ao abrir o app ou ao trocar de espaço. Pode usar dados móveis.',
   settingsSectionAppearance: 'Aparência',
   settingsSectionTimeline: 'Timeline',
   settingsSectionRefresh: 'Atualização',
@@ -52,9 +52,9 @@ export const t = {
     'Cópia completa: feeds, itens lidos, pastas, tags e configurações.',
   backupJson: 'Backup JSON',
   opmlHint: 'Só lista de feeds — compatível com outros leitores RSS.',
-  mergeOpmlHint: 'Adiciona feeds do arquivo; mantém os que já existem.',
+  mergeOpmlHint: 'Adiciona feeds do arquivo ao espaço ativo; mantém os que já existem.',
   replaceOpmlHint:
-    'Apaga todos os feeds atuais e importa só os do arquivo.',
+    'Apaga os feeds do espaço ativo e importa só os do arquivo. O outro espaço permanece.',
   allowHttpFeedsHint:
     'Aceita URLs http:// sem criptografia. Só ative se um feed não tiver HTTPS.',
   notifyOnNewItemsHint:
@@ -165,23 +165,34 @@ export const t = {
   retentionSaved: 'Retenção atualizada',
   retentionInvalid: 'Use um número entre 1 e 365',
   itemsStoredCount: (n: number) =>
-    n === 1 ? '1 item armazenado' : `${n} itens armazenados`,
+    n === 1 ? '1 item neste espaço' : `${n} itens neste espaço`,
   limitsExplanation: 'Até 500 novos itens por feed a cada atualização.',
   applyRetentionNow: 'Aplicar retenção agora',
   removeReadItems: 'Remover itens lidos',
-  clearAllItems: 'Limpar todos os itens',
+  clearAllItems: 'Limpar itens do espaço',
   removeReadItemsConfirm:
-    'Remove itens marcados como lidos. Favoritos são preservados.',
+    'Remove itens lidos deste espaço. Favoritos são preservados. O outro espaço não é afetado.',
   clearAllItemsConfirm:
-    'Remove todos os itens da Timeline. Feeds e pastas permanecem.',
+    'Remove todos os itens deste espaço. Feeds e pastas permanecem. O outro espaço não é afetado.',
   itemsRemoved: (n: number) =>
     n === 1 ? '1 item removido' : `${n} itens removidos`,
   retentionApplied: (removed: number) =>
     removed === 0
       ? 'Nenhum item removido pela retenção'
       : removed === 1
-        ? '1 item removido pela retenção'
-        : `${removed} itens removidos pela retenção`,
+        ? '1 item removido pela retenção (todos os espaços)'
+        : `${removed} itens removidos pela retenção (todos os espaços)`,
   edit: 'Editar',
   inbox: 'Caixa de entrada',
+  switchSpace: 'Trocar espaço',
+  switchSpaceHint: 'Timeline, pastas e fontes mudam com o espaço.',
+  spaceComputing: 'Computação',
+  spaceGeneral: 'Geral',
+  activeSpace: 'Espaço ativo',
 } as const;
+
+export function spaceDisplayName(space: { id: string; name: string }): string {
+  if (space.id === 'computing') return t.spaceComputing;
+  if (space.id === 'general') return t.spaceGeneral;
+  return space.name;
+}

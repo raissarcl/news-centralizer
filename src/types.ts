@@ -1,4 +1,13 @@
+import { isGeneralOnly } from '@/lib/appMode';
+
 export type ThemeMode = 'system' | 'light' | 'dark';
+
+export type Space = {
+  id: string;
+  name: string;
+  icon?: string;
+  sortOrder: number;
+};
 
 export type FeedSource = {
   id: string;
@@ -6,6 +15,7 @@ export type FeedSource = {
   url: string;
   siteUrl?: string;
   favicon?: string;
+  spaceId: string;
   folderIds: string[];
   tagIds: string[];
   enabled: boolean;
@@ -32,6 +42,7 @@ export type FeedItem = {
 export type Folder = {
   id: string;
   name: string;
+  spaceId: string;
   icon?: string;
   sortOrder: number;
   retentionDays?: number;
@@ -40,6 +51,7 @@ export type Folder = {
 export type Tag = {
   id: string;
   name: string;
+  spaceId: string;
   color?: string;
 };
 
@@ -53,10 +65,13 @@ export type Settings = {
   rssHubAcknowledged: boolean;
   lastExportAt: string | null;
   seeded: boolean;
+  seededGeneral: boolean;
+  activeSpaceId: string;
 };
 
 export type PersistedBlob = {
   schemaVersion: number;
+  spaces: Space[];
   feeds: FeedSource[];
   items: FeedItem[];
   folders: Folder[];
@@ -64,7 +79,7 @@ export type PersistedBlob = {
   settings: Settings;
 };
 
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -76,6 +91,8 @@ export const DEFAULT_SETTINGS: Settings = {
   rssHubAcknowledged: false,
   lastExportAt: null,
   seeded: false,
+  seededGeneral: false,
+  activeSpaceId: isGeneralOnly() ? 'general' : 'computing',
 };
 
 export type TimelineFilter = 'all' | 'unread' | 'read' | 'starred';

@@ -27,8 +27,11 @@ export function FolderFeedsScreen() {
   const folder = folders.find((f) => f.id === id);
 
   const allFeeds = useMemo(
-    () => [...feeds].sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')),
-    [feeds]
+    () =>
+      [...feeds]
+        .filter((f) => !folder || f.spaceId === folder.spaceId)
+        .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')),
+    [feeds, folder]
   );
 
   useLayoutEffect(() => {

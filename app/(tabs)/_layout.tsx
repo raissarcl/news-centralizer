@@ -3,10 +3,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable } from 'react-native';
 import { useTheme } from '@/theme';
 import { t } from '@/lib/i18n';
+import { SpaceSwitcher } from '@/features/spaces/components/SpaceSwitcher';
 
 export default function TabsLayout() {
   const { tokens } = useTheme();
   const router = useRouter();
+
+  const headerLeft = () => <SpaceSwitcher />;
 
   const headerRight = () => (
     <Pressable
@@ -28,6 +31,8 @@ export default function TabsLayout() {
         headerTitleStyle: { color: tokens.text, fontWeight: '600' },
         headerTintColor: tokens.text,
         headerShadowVisible: false,
+        headerLeft,
+        headerRight,
         tabBarStyle: {
           backgroundColor: tokens.bg,
           borderTopColor: tokens.border,
@@ -35,7 +40,6 @@ export default function TabsLayout() {
         tabBarActiveTintColor: tokens.primary,
         tabBarInactiveTintColor: tokens.textMuted,
         sceneStyle: { backgroundColor: tokens.bg },
-        headerRight,
       }}
     >
       <Tabs.Screen

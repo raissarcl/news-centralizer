@@ -2,6 +2,7 @@ export type OpmlOutline = {
   title: string;
   xmlUrl?: string;
   htmlUrl?: string;
+  enabled?: boolean;
   children?: OpmlOutline[];
 };
 
@@ -10,6 +11,7 @@ export type OpmlFeedInput = {
   url: string;
   siteUrl?: string;
   folderName?: string;
+  enabled?: boolean;
 };
 
 function decodeXml(text: string): string {
@@ -41,8 +43,13 @@ function parseOutlineBlock(block: string): OpmlOutline[] {
       'Feed';
     const xmlUrl = readAttr(attrs, 'xmlUrl');
     const htmlUrl = readAttr(attrs, 'htmlUrl');
+    const enabledAttr = readAttr(attrs, 'enabled');
+    const enabled =
+      enabledAttr === undefined
+        ? undefined
+        : enabledAttr.toLowerCase() !== 'false' && enabledAttr !== '0';
     const children = inner.trim() ? parseOutlineBlock(inner) : undefined;
-    outlines.push({ title, xmlUrl, htmlUrl, children });
+    outlines.push({ title, xmlUrl, htmlUrl, enabled, children });
   }
   return outlines;
 }
@@ -65,6 +72,7 @@ export function flattenOpmlFeeds(
         url: outline.xmlUrl,
         siteUrl: outline.htmlUrl,
         folderName,
+        enabled: outline.enabled,
       });
       continue;
     }

@@ -27,6 +27,7 @@ export default function RootLayout() {
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
   const hydrateFeeds = useFeedsStore((s) => s.hydrate);
   const seedDefaultsIfNeeded = useFeedsStore((s) => s.seedDefaultsIfNeeded);
+  const seedGeneralIfNeeded = useFeedsStore((s) => s.seedGeneralIfNeeded);
   const refreshAll = useFeedsStore((s) => s.refreshAll);
 
   useEffect(() => {
@@ -35,6 +36,7 @@ export default function RootLayout() {
         await hydrateSettings();
         await hydrateFeeds();
         await seedDefaultsIfNeeded();
+        await seedGeneralIfNeeded();
         await ensureNotificationChannel();
       } finally {
         setBootReady(true);
@@ -47,7 +49,13 @@ export default function RootLayout() {
         }
       }
     })();
-  }, [hydrateSettings, hydrateFeeds, seedDefaultsIfNeeded, refreshAll]);
+  }, [
+    hydrateSettings,
+    hydrateFeeds,
+    seedDefaultsIfNeeded,
+    seedGeneralIfNeeded,
+    refreshAll,
+  ]);
 
   useEffect(() => {
     void Linking.getInitialURL().then((url) => {

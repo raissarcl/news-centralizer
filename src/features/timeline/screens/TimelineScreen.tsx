@@ -11,8 +11,15 @@ import { FeedItemRow, openItemLink } from '../components/FeedItemRow';
 import { FeedItemListToolbar } from '../components/FeedItemListToolbar';
 import { TimelineFilterPanel } from '../components/TimelineFilterPanel';
 import { buildActiveFilterSummary } from '@/lib/feeds/filterLabels';
-import { selectVisibleItems, useFeedsStore } from '@/store/feeds';
+import {
+  foldersInSpace,
+  feedsInSpace,
+  selectVisibleItems,
+  tagsInSpace,
+  useFeedsStore,
+} from '@/store/feeds';
 import { useSettingsStore } from '@/store/settings';
+import { resolveActiveSpaceId } from '@/lib/spaces';
 import { useTheme } from '@/theme';
 import { t } from '@/lib/i18n';
 import { notifyNewItems } from '@/lib/notifications';
@@ -20,8 +27,10 @@ import { notifyNewItems } from '@/lib/notifications';
 export function TimelineScreen() {
   const { tokens } = useTheme();
   const items = useFeedsStore((s) => s.items);
-  const feeds = useFeedsStore((s) => s.feeds);
-  const folders = useFeedsStore((s) => s.folders);
+  const allFeeds = useFeedsStore((s) => s.feeds);
+  const allFolders = useFeedsStore((s) => s.folders);
+  const allTags = useFeedsStore((s) => s.tags);
+  const spaces = useFeedsStore((s) => s.spaces);
   const timelineFilter = useFeedsStore((s) => s.timelineFilter);
   const timelinePeriod = useFeedsStore((s) => s.timelinePeriod);
   const searchQuery = useFeedsStore((s) => s.searchQuery);
@@ -36,11 +45,26 @@ export function TimelineScreen() {
   const setTimelineFilter = useFeedsStore((s) => s.setTimelineFilter);
   const setTimelinePeriod = useFeedsStore((s) => s.setTimelinePeriod);
   const setSearchQuery = useFeedsStore((s) => s.setSearchQuery);
-  const tags = useFeedsStore((s) => s.tags);
   const setSelectedTagId = useFeedsStore((s) => s.setSelectedTagId);
   const setSelectedFolderId = useFeedsStore((s) => s.setSelectedFolderId);
   const setSelectedFeedIds = useFeedsStore((s) => s.setSelectedFeedIds);
+  const activeSpaceId = useSettingsStore((s) =>
+    resolveActiveSpaceId(s.settings.activeSpaceId, spaces)
+  );
   const notifyOnNewItems = useSettingsStore((s) => s.settings.notifyOnNewItems);
+
+  const feeds = useMemo(
+    () => feedsInSpace(allFeeds, activeSpaceId),
+    [allFeeds, activeSpaceId]
+  );
+  const folders = useMemo(
+    () => foldersInSpace(allFolders, activeSpaceId),
+    [allFolders, activeSpaceId]
+  );
+  const tags = useMemo(
+    () => tagsInSpace(allTags, activeSpaceId),
+    [allTags, activeSpaceId]
+  );
 
   const [localRefreshing, setLocalRefreshing] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -49,29 +73,31 @@ export function TimelineScreen() {
     () =>
       selectVisibleItems({
         items,
-        feeds,
+        feeds: allFeeds,
         timelineFilter,
         timelinePeriod,
         searchQuery,
         selectedTagId,
         selectedFolderId,
         selectedFeedIds,
+        spaceId: activeSpaceId,
       }),
     [
       items,
-      feeds,
+      allFeeds,
       timelineFilter,
       timelinePeriod,
       searchQuery,
       selectedTagId,
       selectedFolderId,
       selectedFeedIds,
+      activeSpaceId,
     ]
   );
 
   const feedById = useMemo(
-    () => new Map(feeds.map((f) => [f.id, f])),
-    [feeds]
+    () => new Map(allFeeds.map((f) => [f.id, f])),
+    [allFeeds]
   );
 
   const hasSecondaryFilters =

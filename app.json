@@ -11,13 +11,14 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1d4ed8"
     },
     "android": {
       "package": "com.rairc.newscentralizer",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundColor": "#ffffff"
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "backgroundColor": "#1d4ed8"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": ["android.permission.POST_NOTIFICATIONS"],
@@ -37,8 +38,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
-          "color": "#ffffff"
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#1d4ed8"
         }
       ],
       "./plugins/withNewsCentralizerAndroidWidget.js",

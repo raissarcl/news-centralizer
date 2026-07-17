@@ -1,7 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { isPublishedAtDisplayable } from '@/lib/items/publishDate';
 import { cleanFeedText } from '@/lib/text/cleanFeedText';
-import { validateItemLink } from '@/lib/security/urls';
+import { validateItemLink, unwrapEmbeddedHttpUrl } from '@/lib/security/urls';
 
 export const PARSE_LIMITS = {
   maxEntries: 500,
@@ -89,7 +89,10 @@ function normalizeEntry(entry: {
   return {
     guid: clamp(entry.guid, PARSE_LIMITS.maxLink),
     title: title || 'Sem título',
-    link: clamp(entry.link || entry.guid, PARSE_LIMITS.maxLink),
+    link: clamp(
+      sanitizeItemLink(entry.link || entry.guid),
+      PARSE_LIMITS.maxLink
+    ),
     summary: summary || undefined,
     imageUrl,
     publishedAt: entry.publishedAt,
@@ -99,6 +102,10 @@ function normalizeEntry(entry: {
 function sanitizeImageUrl(raw: string): string | undefined {
   const validated = validateItemLink(raw.trim());
   return validated.ok ? validated.url.href : undefined;
+}
+
+function sanitizeItemLink(raw: string): string {
+  return unwrapEmbeddedHttpUrl(raw.trim());
 }
 
 function extractImageUrl(entry: Record<string, unknown>, htmlRaw?: string): string | undefined {
@@ -178,7 +185,53 @@ function parseRssItems(xml: string): RawFeedEntry[] {
         textValue(i['content:encoded']) ||
         textValue(i.summary);
       const publishedAt = parsePublishedAt(
-        i.pubDate ?? i.published ?? i.updated ?? i['dc:date']
+        i.pubDate ?? i.published ?? i.updated ?? i['dc:date'] ?? i.date
+      );
+      if (!publishedAt) return null;
+      const imageUrl = extractImageUrl(i, summaryRaw);
+      return normalizeEntry({
+        guid: guid || link,
+        title,
+        link: link || guid,
+        summary: summaryRaw || undefined,
+        imageUrl,
+        publishedAt,
+      });
+    })
+    .filter((entry): entry is RawFeedEntry => entry !== null);
+}
+
+/**
+ * RSS 1.0 / RDF (e.g. Deutsche Welle): items are siblings of channel under RDF,
+ * not nested inside channel like RSS 2.0.
+ */
+function parseRdfItems(xml: string): RawFeedEntry[] {
+  const parser = new XMLParser(XML_PARSER_OPTIONS);
+  const doc = parser.parse(xml) as Record<string, unknown>;
+  const rdf = (doc.RDF ?? doc['rdf:RDF']) as Record<string, unknown> | undefined;
+  if (!rdf) return [];
+
+  return asArray(rdf.item)
+    .map((item) => {
+      const i = item as Record<string, unknown>;
+      const about =
+        textValue(i['@_about']) ||
+        textValue(i['@_rdf:about']) ||
+        textValue(i['@rdf:about']);
+      const link = textValue(i.link) || about;
+      const guid = textValue(i.guid) || textValue(i.id) || about || link;
+      const title = textValue(i.title) || 'Sem título';
+      const summaryRaw =
+        textValue(i.description) ||
+        textValue(i['content:encoded']) ||
+        textValue(i.content) ||
+        textValue(i.summary);
+      const publishedAt = parsePublishedAt(
+        i['dc:date'] ??
+          i.date ??
+          i.pubDate ??
+          i.published ??
+          i.updated
       );
       if (!publishedAt) return null;
       const imageUrl = extractImageUrl(i, summaryRaw);
@@ -198,16 +251,32 @@ export function parseFeedXml(xml: string): RawFeedEntry[] {
   const trimmed = xml.trim();
   if (!trimmed) return [];
 
-  let entries: RawFeedEntry[] = [];
-  if (/<feed[\s>]/i.test(trimmed) || trimmed.includes('<entry')) {
-    entries = parseAtomEntries(trimmed);
-  }
-  if (entries.length === 0) {
-    entries = parseRssItems(trimmed);
-  }
-  if (entries.length === 0) {
-    entries = parseAtomEntries(trimmed);
-  }
+  try {
+    let entries: RawFeedEntry[] = [];
+    const looksAtom = /<feed[\s>]/i.test(trimmed) || /<entry[\s>]/i.test(trimmed);
+    const looksRdf =
+      /<(?:rdf:)?RDF[\s>]/i.test(trimmed) ||
+      /xmlns:rdf=/i.test(trimmed) ||
+      /rss\/1\.0/i.test(trimmed);
 
-  return entries.slice(0, PARSE_LIMITS.maxEntries);
+    if (looksAtom && !looksRdf) {
+      entries = parseAtomEntries(trimmed);
+    }
+    if (entries.length === 0 && looksRdf) {
+      entries = parseRdfItems(trimmed);
+    }
+    if (entries.length === 0) {
+      entries = parseRssItems(trimmed);
+    }
+    if (entries.length === 0 && !looksAtom) {
+      entries = parseAtomEntries(trimmed);
+    }
+    if (entries.length === 0) {
+      entries = parseRdfItems(trimmed);
+    }
+
+    return entries.slice(0, PARSE_LIMITS.maxEntries);
+  } catch {
+    return [];
+  }
 }

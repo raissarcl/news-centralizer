@@ -1,17 +1,38 @@
 import type { FeedSource, Folder } from '@/types';
+import { COMPUTING_SPACE_ID } from '@/lib/spaces';
 
-export const INBOX_FOLDER_ID = 'inbox';
+export const LEGACY_INBOX_FOLDER_ID = 'inbox';
 
-export function normalizeFeedFolderIds(folderIds: string[]): string[] {
-  const unique = [...new Set(folderIds.filter(Boolean))];
-  return unique.length > 0 ? unique : [INBOX_FOLDER_ID];
+export function inboxFolderId(spaceId: string): string {
+  return `inbox:${spaceId}`;
+}
+
+/** Default inbox after schema v7 migration (computing space). */
+export const INBOX_FOLDER_ID = inboxFolderId(COMPUTING_SPACE_ID);
+
+export function isInboxFolderId(folderId: string): boolean {
+  return folderId === LEGACY_INBOX_FOLDER_ID || folderId.startsWith('inbox:');
+}
+
+export function normalizeFeedFolderIds(
+  folderIds: string[],
+  spaceId: string = COMPUTING_SPACE_ID
+): string[] {
+  const unique = [
+    ...new Set(
+      folderIds
+        .filter(Boolean)
+        .map((id) => (id === LEGACY_INBOX_FOLDER_ID ? inboxFolderId(spaceId) : id))
+    ),
+  ];
+  return unique.length > 0 ? unique : [inboxFolderId(spaceId)];
 }
 
 export function getFeedFolderIds(feed: FeedSource): string[] {
   if (feed.folderIds.length > 0) {
-    return normalizeFeedFolderIds(feed.folderIds);
+    return normalizeFeedFolderIds(feed.folderIds, feed.spaceId);
   }
-  return [INBOX_FOLDER_ID];
+  return [inboxFolderId(feed.spaceId)];
 }
 
 export function feedInFolder(feed: FeedSource, folderId: string): boolean {
@@ -21,12 +42,18 @@ export function feedInFolder(feed: FeedSource, folderId: string): boolean {
 export function addFeedToFolder(feed: FeedSource, folderId: string): FeedSource {
   const ids = getFeedFolderIds(feed);
   if (ids.includes(folderId)) return feed;
-  return { ...feed, folderIds: normalizeFeedFolderIds([...ids, folderId]) };
+  return {
+    ...feed,
+    folderIds: normalizeFeedFolderIds([...ids, folderId], feed.spaceId),
+  };
 }
 
 export function removeFeedFromFolder(feed: FeedSource, folderId: string): FeedSource {
   const ids = getFeedFolderIds(feed).filter((id) => id !== folderId);
-  return { ...feed, folderIds: normalizeFeedFolderIds(ids) };
+  return {
+    ...feed,
+    folderIds: normalizeFeedFolderIds(ids, feed.spaceId),
+  };
 }
 
 export function toggleFeedFolderMembership(

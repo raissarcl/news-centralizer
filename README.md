@@ -83,6 +83,8 @@ npm run validate-feeds
 
 `validate-engblogs` is an alias for the same script pointing at `src/data/engblogs-starter.opml`.
 
+The public general-news seed is lean (`src/data/default-general-feeds.opml`, ~5 outlets). Keep a fuller private catalog in the gitignored `*.local.opml` / `*.local.ts` pair; Metro prefers those when present. Sync embeds with `npm run sync-general-feeds` or `npm run sync-general-feeds:local`.
+
 ### Build local APK (no cloud)
 
 **Easiest:** double-click or run from the project root:
@@ -90,6 +92,14 @@ npm run validate-feeds
 ```bash
 .\build-apk.bat
 ```
+
+**General-news only** (hides Computing space; seeds only Geral):
+
+```powershell
+$env:EXPO_PUBLIC_GENERAL_ONLY='1'; .\build-apk.bat
+```
+
+Same flag for dev: `$env:EXPO_PUBLIC_GENERAL_ONLY='1'; npx expo start`
 
 The script tries to create **`C:\nc`** (junction → project folder) to shorten CMake paths. If that fails, it uses the normal path.
 
@@ -236,6 +246,8 @@ npm run validate-feeds
 
 `validate-engblogs` é alias do mesmo script apontando para `src/data/engblogs-starter.opml`.
 
+O seed público de notícias gerais é enxuto (`src/data/default-general-feeds.opml`, ~5 portais). O catálogo completo fica nos arquivos gitignored `*.local.opml` / `*.local.ts`; o Metro usa esses quando existem. Para regenerar o embed: `npm run sync-general-feeds` ou `npm run sync-general-feeds:local`.
+
 ### Gerar APK local (sem cloud)
 
 **Forma mais fácil:** dê duplo clique ou rode na raiz do projeto:
@@ -243,6 +255,14 @@ npm run validate-feeds
 ```bash
 .\build-apk.bat
 ```
+
+**Só notícias gerais** (sem espaço Computação; seed só do Geral):
+
+```powershell
+$env:EXPO_PUBLIC_GENERAL_ONLY='1'; .\build-apk.bat
+```
+
+Mesmo flag no dev: `$env:EXPO_PUBLIC_GENERAL_ONLY='1'; npx expo start`
 
 O script tenta criar **`C:\nc`** (junction → pasta do projeto) para encurtar caminhos no CMake. Se falhar, usa o caminho normal.
 

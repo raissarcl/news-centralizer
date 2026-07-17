@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { isGeneralOnly } from '../lib/appMode';
+import { GENERAL_SPACE_ID } from '../lib/spaces';
 import { DEFAULT_SETTINGS, type Settings } from '../types';
 import { buildBlob, loadBlob, saveBlob } from './persistence';
 import { useFeedsStore } from './feeds';
@@ -15,7 +17,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   hydrated: false,
   hydrate: async () => {
     const blob = await loadBlob();
-    set({ settings: blob.settings, hydrated: true });
+    const settings = isGeneralOnly()
+      ? { ...blob.settings, activeSpaceId: GENERAL_SPACE_ID }
+      : blob.settings;
+    set({ settings, hydrated: true });
   },
   update: async (patch) => {
     const next = { ...get().settings, ...patch };
@@ -23,6 +28,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const feedsState = useFeedsStore.getState();
     await saveBlob(
       buildBlob(
+        feedsState.spaces,
         feedsState.feeds,
         feedsState.items,
         feedsState.folders,

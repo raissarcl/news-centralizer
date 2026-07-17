@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Pressable,
@@ -10,15 +10,16 @@ import {
   View,
 } from 'react-native';
 import { useSettingsStore } from '@/store/settings';
-import { useFeedsStore } from '@/store/feeds';
+import { tagsInSpace, useFeedsStore } from '@/store/feeds';
 import { getSwitchProps, useTheme, type ThemeTokens } from '@/theme';
-import { t } from '@/lib/i18n';
+import { spaceDisplayName, t } from '@/lib/i18n';
 import {
   exportBackupJson,
   exportOpml,
   importBackupJson,
   importOpml,
 } from '@/lib/backup';
+import { resolveActiveSpaceId } from '@/lib/spaces';
 import type { ThemeMode } from '@/types';
 
 const THEMES: ThemeMode[] = ['system', 'light', 'dark'];
@@ -31,14 +32,29 @@ export function SettingsScreen() {
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const items = useFeedsStore((s) => s.items);
+  const feeds = useFeedsStore((s) => s.feeds);
+  const spaces = useFeedsStore((s) => s.spaces);
   const addFolder = useFeedsStore((s) => s.addFolder);
   const addTag = useFeedsStore((s) => s.addTag);
   const renameTag = useFeedsStore((s) => s.renameTag);
   const removeTag = useFeedsStore((s) => s.removeTag);
-  const tags = useFeedsStore((s) => s.tags);
+  const allTags = useFeedsStore((s) => s.tags);
   const purgeItemsByRetention = useFeedsStore((s) => s.purgeItemsByRetention);
   const removeReadItems = useFeedsStore((s) => s.removeReadItems);
   const clearAllItems = useFeedsStore((s) => s.clearAllItems);
+
+  const activeSpaceId = resolveActiveSpaceId(settings.activeSpaceId, spaces);
+  const activeSpace = spaces.find((s) => s.id === activeSpaceId);
+  const tags = useMemo(
+    () => tagsInSpace(allTags, activeSpaceId),
+    [allTags, activeSpaceId]
+  );
+  const itemsInActiveSpace = useMemo(() => {
+    const feedIds = new Set(
+      feeds.filter((f) => f.spaceId === activeSpaceId).map((f) => f.id)
+    );
+    return items.filter((i) => feedIds.has(i.feedId)).length;
+  }, [items, feeds, activeSpaceId]);
 
   const [folderName, setFolderName] = useState('');
   const [tagName, setTagName] = useState('');
@@ -144,7 +160,7 @@ export function SettingsScreen() {
           {t.retentionDaysHint}
         </Text>
         <Text style={[styles.hint, { color: tokens.textMuted }]}>
-          {t.itemsStoredCount(items.length)} · {t.limitsExplanation}
+          {t.itemsStoredCount(itemsInActiveSpace)} · {t.limitsExplanation}
         </Text>
         <View style={styles.inlineForm}>
           <TextInput
@@ -217,6 +233,12 @@ export function SettingsScreen() {
       </Section>
 
       <Section title={t.settingsSectionOrganization} tokens={tokens}>
+        <Text style={[styles.fieldLabel, { color: tokens.text }]}>{t.activeSpace}</Text>
+        <Text style={[styles.hint, { color: tokens.textMuted, marginBottom: 12 }]}>
+          {activeSpace ? spaceDisplayName(activeSpace) : '—'}
+          {' · '}
+          {t.switchSpaceHint}
+        </Text>
         <Text style={[styles.fieldLabel, { color: tokens.text }]}>{t.folders}</Text>
         <Text style={[styles.hint, { color: tokens.textMuted }]}>{t.foldersHint}</Text>
         <View style={styles.inlineForm}>

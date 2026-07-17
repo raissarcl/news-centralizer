@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   validateFeedUrl,
   validateItemLink,
+  unwrapEmbeddedHttpUrl,
   isPrivateHost,
 } from '../src/lib/security/urls';
 import { filterValidFeedInputs } from '../src/lib/security/importLimits';
@@ -28,6 +29,17 @@ function testUrls() {
   assert.equal(validateItemLink('http://example.com/article').ok, true);
   assert.equal(validateItemLink('javascript:alert(1)').ok, false);
   assert.equal(validateItemLink('intent://evil').ok, false);
+
+  assert.equal(
+    unwrapEmbeddedHttpUrl(
+      'https://redir.folha.com.br/redir/online/poder/rss091/*https://www1.folha.uol.com.br/poder/a.shtml'
+    ),
+    'https://www1.folha.uol.com.br/poder/a.shtml'
+  );
+  assert.equal(
+    unwrapEmbeddedHttpUrl('https://example.com/plain'),
+    'https://example.com/plain'
+  );
 }
 
 function testImportFilter() {
