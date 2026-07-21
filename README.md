@@ -85,39 +85,77 @@ npm run validate-feeds
 
 The public general-news seed is lean (`src/data/default-general-feeds.opml`, ~5 outlets). Keep a fuller private catalog in the gitignored `*.local.opml` / `*.local.ts` pair; Metro prefers those when present. Sync embeds with `npm run sync-general-feeds` or `npm run sync-general-feeds:local`.
 
+### Build variants (spaces)
+
+The app has two spaces: **Computação** (tech feeds) and **Geral** (general news). The build flag `EXPO_PUBLIC_GENERAL_ONLY` is baked in at bundle time — pick the variant **before** building or starting Metro.
+
+| Variant | Spaces | Flag | When to use |
+| --- | --- | --- | --- |
+| **Full** (default) | Computação + Geral | unset / omit | Everyday APK with both catalogs and space switcher |
+| **Geral only** | Geral only | `EXPO_PUBLIC_GENERAL_ONLY=1` | Ship a news-only build (no Computing space, no computing seed) |
+
 ### Build local APK (no cloud)
 
-**Easiest:** double-click or run from the project root:
+Requires: Node, JDK 17, Android SDK. From the **project root**.
 
-```bash
+#### 1) Full APK — Computação + Geral
+
+```powershell
+# PowerShell or CMD
 .\build-apk.bat
 ```
 
-**General-news only** (hides Computing space; seeds only Geral):
+Or: `npm run build:apk`
+
+Do **not** set `EXPO_PUBLIC_GENERAL_ONLY`. Both spaces appear; computing + general seeds run on first launch.
+
+#### 2) Geral-only APK
 
 ```powershell
+# PowerShell
 $env:EXPO_PUBLIC_GENERAL_ONLY='1'; .\build-apk.bat
 ```
 
-Same flag for dev: `$env:EXPO_PUBLIC_GENERAL_ONLY='1'; npx expo start`
+```bat
+REM CMD
+set EXPO_PUBLIC_GENERAL_ONLY=1
+.\build-apk.bat
+```
 
-The script tries to create **`C:\nc`** (junction → project folder) to shorten CMake paths. If that fails, it uses the normal path.
+Hides Computação, forces active space to Geral, and skips the computing default seed.
 
-> **Important:** `subst N:` breaks Expo and Gradle in this project. Use `.\build-apk.bat` or, once as Admin: `mklink /J C:\nc <path-to-project>`
+#### Dev (same variants)
 
-APK output:
+```powershell
+# Full (both spaces)
+npx expo start
+
+# Geral only
+$env:EXPO_PUBLIC_GENERAL_ONLY='1'; npx expo start
+```
+
+Restart Metro after changing the flag (it is read at bundle time).
+
+#### Output and install
+
+APK path:
 
 `android\app\build\outputs\apk\release\app-release.apk`
-
-Install on device (USB + debugging):
 
 ```bash
 adb install -r android\app\build\outputs\apk\release\app-release.apk
 ```
 
-#### Manual (equivalent)
+The script uses junction **`C:\nc`** → project folder to shorten CMake paths on Windows.
 
-```bash
+> **Important:** `subst N:` breaks Expo and Gradle here. Use `.\build-apk.bat` or, once as Admin: `mklink /J C:\nc <path-to-project>`
+
+#### Manual Gradle (equivalent)
+
+```powershell
+# Optional for Geral-only — set in the same shell before prebuild:
+# $env:EXPO_PUBLIC_GENERAL_ONLY='1'
+
 npx expo prebuild --platform android
 cd android
 .\gradlew.bat assembleRelease
@@ -155,13 +193,13 @@ On **Sources → Add**, the **Suggest RSSHub URL** button tries to convert the p
 ### Structure
 
 ```
-app/           # expo-router routes (thin)
-src/features/  # screens and components by domain
-src/store/     # Zustand + persistence + v3 migration
+app/           # expo-router routes + screens
+src/features/  # shared UI components by domain
+src/store/     # Zustand + persistence + migrations
 src/lib/       # RSS, OPML, backup, notifications, feed health
 src/data/      # default OPML
 plugins/       # Android widget (prebuild)
-scripts/       # validate-feeds, test-unit, test-security
+scripts/       # validate-feeds, prune-inactive-feeds, tests
 .github/       # CI (tsc, tests, validate-feeds)
 ```
 
@@ -248,39 +286,77 @@ npm run validate-feeds
 
 O seed público de notícias gerais é enxuto (`src/data/default-general-feeds.opml`, ~5 portais). O catálogo completo fica nos arquivos gitignored `*.local.opml` / `*.local.ts`; o Metro usa esses quando existem. Para regenerar o embed: `npm run sync-general-feeds` ou `npm run sync-general-feeds:local`.
 
+### Variantes de build (espaços)
+
+O app tem dois espaços: **Computação** (tech) e **Geral** (notícias). A flag `EXPO_PUBLIC_GENERAL_ONLY` é embutida no bundle — escolha a variante **antes** do build ou do `expo start`.
+
+| Variante | Espaços | Flag | Quando usar |
+| --- | --- | --- | --- |
+| **Completa** (padrão) | Computação + Geral | não definir | APK do dia a dia, com os dois catálogos e o seletor de espaço |
+| **Só Geral** | só Geral | `EXPO_PUBLIC_GENERAL_ONLY=1` | Build só de notícias (sem Computação, sem seed de computing) |
+
 ### Gerar APK local (sem cloud)
 
-**Forma mais fácil:** dê duplo clique ou rode na raiz do projeto:
+Requisitos: Node, JDK 17, Android SDK. Na **raiz do projeto**.
 
-```bash
+#### 1) APK completa — Computação + Geral
+
+```powershell
+# PowerShell ou CMD
 .\build-apk.bat
 ```
 
-**Só notícias gerais** (sem espaço Computação; seed só do Geral):
+Ou: `npm run build:apk`
+
+**Não** defina `EXPO_PUBLIC_GENERAL_ONLY`. Os dois espaços aparecem; no primeiro uso rodam os seeds de Computação e Geral.
+
+#### 2) APK só Geral
 
 ```powershell
+# PowerShell
 $env:EXPO_PUBLIC_GENERAL_ONLY='1'; .\build-apk.bat
 ```
 
-Mesmo flag no dev: `$env:EXPO_PUBLIC_GENERAL_ONLY='1'; npx expo start`
+```bat
+REM CMD
+set EXPO_PUBLIC_GENERAL_ONLY=1
+.\build-apk.bat
+```
 
-O script tenta criar **`C:\nc`** (junction → pasta do projeto) para encurtar caminhos no CMake. Se falhar, usa o caminho normal.
+Esconde Computação, força o espaço ativo para Geral e não faz seed de computing.
 
-> **Importante:** `subst N:` quebra Expo e Gradle neste projeto. Use `.\build-apk.bat` ou, uma vez como Admin: `mklink /J C:\nc <caminho-do-projeto>`
+#### Dev (mesmas variantes)
 
-APK gerado em:
+```powershell
+# Completa (os dois espaços)
+npx expo start
+
+# Só Geral
+$env:EXPO_PUBLIC_GENERAL_ONLY='1'; npx expo start
+```
+
+Reinicie o Metro depois de mudar a flag (ela é lida na hora do bundle).
+
+#### Saída e instalação
+
+APK em:
 
 `android\app\build\outputs\apk\release\app-release.apk`
-
-Instalar no celular (USB + depuração):
 
 ```bash
 adb install -r android\app\build\outputs\apk\release\app-release.apk
 ```
 
-#### Manual (equivalente)
+O script usa a junction **`C:\nc`** → pasta do projeto para encurtar caminhos no CMake (Windows).
 
-```bash
+> **Importante:** `subst N:` quebra Expo e Gradle neste projeto. Use `.\build-apk.bat` ou, uma vez como Admin: `mklink /J C:\nc <caminho-do-projeto>`
+
+#### Manual com Gradle (equivalente)
+
+```powershell
+# Opcional para só Geral — na mesma shell, antes do prebuild:
+# $env:EXPO_PUBLIC_GENERAL_ONLY='1'
+
 npx expo prebuild --platform android
 cd android
 .\gradlew.bat assembleRelease
@@ -318,12 +394,12 @@ Na tela **Fontes → Adicionar**, o botão **Sugerir URL RSSHub** tenta converte
 ### Estrutura
 
 ```
-app/           # rotas expo-router (finas)
-src/features/  # telas e componentes por domínio
-src/store/     # Zustand + persistência + migração v3
+app/           # rotas expo-router + telas
+src/features/  # componentes compartilhados por domínio
+src/store/     # Zustand + persistência + migrações
 src/lib/       # RSS, OPML, backup, notificações, saúde feeds
 src/data/      # OPML padrão
 plugins/       # widget Android (prebuild)
-scripts/       # validate-feeds, test-unit, test-security
+scripts/       # validate-feeds, prune-inactive-feeds, testes
 .github/       # CI (tsc, testes, validate-feeds)
 ```

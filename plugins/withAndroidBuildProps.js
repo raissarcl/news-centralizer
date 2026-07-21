@@ -5,7 +5,7 @@ function withAndroidBuildProps(config) {
   return withGradleProperties(config, (cfg) => {
     const items = cfg.modResults.filter(
       (item) =>
-        !(item.type === 'property' && item.key === 'reactNativeArchitectures')
+        !(item.type === 'property' && item.key === 'reactNativeArchitectures'),
     );
     items.push({
       type: 'property',

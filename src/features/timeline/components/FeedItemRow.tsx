@@ -51,7 +51,7 @@ export const FeedItemRow = memo(function FeedItemRow({
   const displayTitle = useMemo(() => cleanFeedText(item.title), [item.title]);
   const displaySummary = useMemo(
     () => (item.summary ? cleanFeedText(item.summary) : undefined),
-    [item.summary]
+    [item.summary],
   );
 
   let absoluteDate = '';
@@ -180,7 +180,12 @@ export const FeedItemRow = memo(function FeedItemRow({
           {favicon ? (
             <Image source={{ uri: favicon }} style={styles.favicon} />
           ) : (
-            <View style={[styles.faviconPlaceholder, { backgroundColor: tokens.surfaceAlt }]} />
+            <View
+              style={[
+                styles.faviconPlaceholder,
+                { backgroundColor: tokens.surfaceAlt },
+              ]}
+            />
           )}
           <View style={styles.main}>
             {sourceLabel ? (
@@ -194,7 +199,10 @@ export const FeedItemRow = memo(function FeedItemRow({
             <View style={styles.titleRow}>
               {!item.read && (
                 <View
-                  style={[styles.unreadDot, { backgroundColor: tokens.unreadDot }]}
+                  style={[
+                    styles.unreadDot,
+                    { backgroundColor: tokens.unreadDot },
+                  ]}
                 />
               )}
               <Text
@@ -250,7 +258,10 @@ export const FeedItemRow = memo(function FeedItemRow({
 });
 
 export async function openItemLink(link: string): Promise<void> {
-  await safeOpenLink(link);
+  const result = await safeOpenLink(link);
+  if (!result.ok) {
+    Alert.alert(t.appName, t.unsafeLinkBlocked);
+  }
 }
 
 const styles = StyleSheet.create({

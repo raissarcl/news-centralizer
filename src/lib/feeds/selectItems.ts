@@ -45,7 +45,10 @@ export function selectVisibleItems(state: {
     if (state.selectedTagId && !feed.tagIds.includes(state.selectedTagId)) {
       return false;
     }
-    if (state.selectedFeedIds?.length && !state.selectedFeedIds.includes(item.feedId)) {
+    if (
+      state.selectedFeedIds?.length &&
+      !state.selectedFeedIds.includes(item.feedId)
+    ) {
       return false;
     }
     if (state.timelineFilter === 'unread' && item.read) return false;
@@ -59,11 +62,7 @@ export function selectVisibleItems(state: {
       }
     }
     if (q) {
-      const haystack = [
-        item.title,
-        item.summary ?? '',
-        feed.title,
-      ]
+      const haystack = [item.title, item.summary ?? '', feed.title]
         .join(' ')
         .toLowerCase();
       if (!haystack.includes(q)) return false;
@@ -77,18 +76,27 @@ export function selectVisibleItems(state: {
 export function filterItemsForFolder(
   items: FeedItem[],
   folderId: string,
-  feeds: FeedSource[]
+  feeds: FeedSource[],
 ): FeedItem[] {
   const feedIds = new Set(
-    feeds.filter((f) => feedInFolder(f, folderId) && f.enabled).map((f) => f.id)
+    feeds
+      .filter((f) => feedInFolder(f, folderId) && f.enabled)
+      .map((f) => f.id),
   );
   return dedupeItemsByLink(
-    items.filter((i) => feedIds.has(i.feedId) && isPublishedAtDisplayable(i.publishedAt))
+    items.filter(
+      (i) => feedIds.has(i.feedId) && isPublishedAtDisplayable(i.publishedAt),
+    ),
   );
 }
 
-export function filterItemsForFeed(items: FeedItem[], feedId: string): FeedItem[] {
+export function filterItemsForFeed(
+  items: FeedItem[],
+  feedId: string,
+): FeedItem[] {
   return sortItemsByPublishedDesc(
-    items.filter((i) => i.feedId === feedId && isPublishedAtDisplayable(i.publishedAt))
+    items.filter(
+      (i) => i.feedId === feedId && isPublishedAtDisplayable(i.publishedAt),
+    ),
   );
 }

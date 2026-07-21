@@ -1,13 +1,14 @@
-import { Linking, Alert } from 'react-native';
+import { Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { unwrapEmbeddedHttpUrl, validateItemLink } from './urls';
-import { t } from '../i18n';
 
-export async function safeOpenLink(link: string): Promise<boolean> {
+export type SafeOpenLinkResult =
+  { ok: true } | { ok: false; reason: 'blocked' | 'open_failed' };
+
+export async function safeOpenLink(link: string): Promise<SafeOpenLinkResult> {
   const validated = validateItemLink(unwrapEmbeddedHttpUrl(link));
   if (!validated.ok) {
-    Alert.alert(t.appName, t.unsafeLinkBlocked);
-    return false;
+    return { ok: false, reason: 'blocked' };
   }
 
   const href = validated.url.href;
@@ -15,14 +16,13 @@ export async function safeOpenLink(link: string): Promise<boolean> {
     await WebBrowser.openBrowserAsync(href, {
       presentationStyle: WebBrowser.WebBrowserPresentationStyle.AUTOMATIC,
     });
-    return true;
+    return { ok: true };
   } catch {
     const can = await Linking.canOpenURL(href);
     if (can) {
       await Linking.openURL(href);
-      return true;
+      return { ok: true };
     }
-    Alert.alert(t.appName, t.unsafeLinkBlocked);
-    return false;
+    return { ok: false, reason: 'open_failed' };
   }
 }

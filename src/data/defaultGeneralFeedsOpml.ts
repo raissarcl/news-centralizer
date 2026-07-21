@@ -5,11 +5,22 @@ export const DEFAULT_GENERAL_FEEDS_OPML = `<?xml version="1.0" encoding="UTF-8"?
   </head>
   <body>
     <outline text="Portais" title="Portais">
-      <outline type="rss" text="G1 Brasil" title="G1 Brasil" xmlUrl="https://g1.globo.com/dynamo/brasil/rss2.xml" htmlUrl="https://g1.globo.com/brasil/" />
-      <outline type="rss" text="UOL Notícias" title="UOL Notícias" xmlUrl="https://rss.uol.com.br/feed/noticias.xml" htmlUrl="https://noticias.uol.com.br/" />
+<outline type="rss" text="UOL Notícias" title="UOL Notícias" xmlUrl="https://rss.uol.com.br/feed/noticias.xml" htmlUrl="https://noticias.uol.com.br/" />
       <outline type="rss" text="CNN Brasil" title="CNN Brasil" xmlUrl="https://www.cnnbrasil.com.br/feed/" htmlUrl="https://www.cnnbrasil.com.br/" />
       <outline type="rss" text="Agência Brasil" title="Agência Brasil" xmlUrl="https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml" htmlUrl="https://agenciabrasil.ebc.com.br/" />
       <outline type="rss" text="BBC Brasil" title="BBC Brasil" xmlUrl="https://feeds.bbci.co.uk/portuguese/rss.xml" htmlUrl="https://www.bbc.com/portuguese" />
+    </outline>
+    <outline text="Cultura pop" title="Cultura pop">
+      <outline type="rss" text="POPline" title="POPline" xmlUrl="https://portalpopline.com.br/feed/" htmlUrl="https://portalpopline.com.br/" />
+      <outline type="rss" text="Rolling Stone Brasil" title="Rolling Stone Brasil" xmlUrl="https://rollingstone.com.br/feed/" htmlUrl="https://rollingstone.com.br/" />
+      <outline type="rss" text="Tracklist" title="Tracklist" xmlUrl="https://tracklist.com.br/feed/" htmlUrl="https://tracklist.com.br/" />
+      <outline type="rss" text="Tenho Mais Discos Que Amigos" title="Tenho Mais Discos Que Amigos" xmlUrl="https://www.tenhomaisdiscosqueamigos.com/feed/" htmlUrl="https://www.tenhomaisdiscosqueamigos.com/" />
+      <outline type="rss" text="G1 Pop &amp; Arte" title="G1 Pop &amp; Arte" xmlUrl="https://g1.globo.com/dynamo/pop-arte/rss2.xml" htmlUrl="https://g1.globo.com/pop-arte/" />
+<outline type="rss" text="UOL Entretenimento" title="UOL Entretenimento" xmlUrl="https://rss.uol.com.br/feed/entretenimento.xml" htmlUrl="https://www.uol.com.br/splash/" />
+      <outline type="rss" text="Contigo!" title="Contigo!" xmlUrl="https://www.contigo.com.br/feed/" htmlUrl="https://www.contigo.com.br/" />
+      <outline type="rss" text="Papel Pop" title="Papel Pop" xmlUrl="https://www.papelpop.com/feed/" htmlUrl="https://www.papelpop.com/" />
+      <outline type="rss" text="Gshow" title="Gshow" xmlUrl="https://gshow.globo.com/rss/gshow/" htmlUrl="https://gshow.globo.com/" />
+      <outline type="rss" text="Pipoca Moderna" title="Pipoca Moderna" xmlUrl="https://www.pipocamoderna.com.br/feed/" htmlUrl="https://www.pipocamoderna.com.br/" />
     </outline>
   </body>
 </opml>

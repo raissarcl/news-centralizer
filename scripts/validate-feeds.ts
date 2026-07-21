@@ -19,7 +19,7 @@ type Result = {
 async function validateFeed(
   title: string,
   url: string,
-  folder?: string
+  folder?: string,
 ): Promise<Result> {
   const result = await safeFetch(url, {
     headers: {
@@ -63,7 +63,7 @@ async function main() {
     results.push(result);
     const icon = result.error ? 'FAIL' : 'OK';
     console.log(
-      `[${icon}] ${result.title} (${result.folder ?? '?'}) — ${result.status}, ${result.items} items${result.error ? ` — ${result.error}` : ''}`
+      `[${icon}] ${result.title} (${result.folder ?? '?'}) — ${result.status}, ${result.items} items${result.error ? ` — ${result.error}` : ''}`,
     );
     await new Promise((r) => setTimeout(r, 300));
   }

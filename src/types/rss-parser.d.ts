@@ -4,7 +4,7 @@ declare module 'react-native-rss-parser' {
     title?: string;
     description?: string;
     published?: string;
-    links?: Array<{ url?: string }>;
+    links?: { url?: string }[];
   };
 
   export type RssFeed = {

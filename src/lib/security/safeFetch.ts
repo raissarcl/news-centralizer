@@ -30,7 +30,7 @@ function resolveRedirect(current: URL, location: string): URL {
 
 export async function safeFetch(
   rawUrl: string,
-  init: RequestInit & { validateOptions?: FeedUrlOptions } = {}
+  init: RequestInit & { validateOptions?: FeedUrlOptions } = {},
 ): Promise<SafeFetchResult | SafeFetchError> {
   const { validateOptions, ...fetchInit } = init;
   const validated = validateFeedUrl(rawUrl, validateOptions);
@@ -53,10 +53,18 @@ export async function safeFetch(
       if (REDIRECT_STATUSES.has(response.status)) {
         const location = response.headers.get('location');
         if (!location) {
-          return { ok: false, status: response.status, error: 'Redirect sem Location' };
+          return {
+            ok: false,
+            status: response.status,
+            error: 'Redirect sem Location',
+          };
         }
         if (hop >= FETCH_LIMITS.maxRedirects) {
-          return { ok: false, status: response.status, error: 'Muitos redirects' };
+          return {
+            ok: false,
+            status: response.status,
+            error: 'Muitos redirects',
+          };
         }
         const next = resolveRedirect(currentUrl, location);
         const nextValidated = validateFeedUrl(next.href, validateOptions);
@@ -112,7 +120,7 @@ export async function safeFetch(
       }
       const text = decodeFeedBody(
         new Uint8Array(buffer),
-        response.headers.get('content-type')
+        response.headers.get('content-type'),
       );
       return {
         ok: true,

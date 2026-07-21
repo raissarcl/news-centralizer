@@ -21,9 +21,16 @@ function copyAndroidWidgetFiles(projectRoot) {
     'com',
     'rairc',
     'newscentralizer',
-    'widget'
+    'widget',
   );
-  const resMain = path.join(projectRoot, 'android', 'app', 'src', 'main', 'res');
+  const resMain = path.join(
+    projectRoot,
+    'android',
+    'app',
+    'src',
+    'main',
+    'res',
+  );
 
   if (!fs.existsSync(javaBase)) fs.mkdirSync(javaBase, { recursive: true });
 
@@ -53,7 +60,8 @@ function withWidgetManifest(config) {
     if (!app.receiver) app.receiver = [];
 
     const exists = app.receiver.some(
-      (r) => String(r.$?.['android:name'] || '') === '.widget.NewsCentralizerWidget'
+      (r) =>
+        String(r.$?.['android:name'] || '') === '.widget.NewsCentralizerWidget',
     );
     if (!exists) {
       app.receiver.push({
@@ -95,7 +103,7 @@ function withWidgetMainApplication(config) {
       contents = contents.replace(
         /PackageList\(this\)\.packages\.apply\s*\{/,
         `PackageList(this).packages.apply {
-              add(com.rairc.newscentralizer.widget.WidgetSyncPackage())`
+              add(com.rairc.newscentralizer.widget.WidgetSyncPackage())`,
       );
     }
     cfg.modResults.contents = contents;
@@ -121,5 +129,5 @@ module.exports = createRunOncePlugin(
     return config;
   },
   'withNewsCentralizerAndroidWidget',
-  '1.0.0'
+  '1.0.0',
 );

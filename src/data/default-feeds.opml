@@ -6,25 +6,18 @@
   <body>
     <outline text="Comunidade" title="Comunidade">
       <outline type="rss" text="Hacker News — Front Page" title="Hacker News — Front Page" xmlUrl="https://hnrss.org/frontpage" htmlUrl="https://news.ycombinator.com/" />
-      <outline type="rss" text="Hacker News — Show HN" title="Hacker News — Show HN" xmlUrl="https://hnrss.org/show" htmlUrl="https://news.ycombinator.com/show" />
-      <outline type="rss" text="Lobsters" title="Lobsters" xmlUrl="https://lobste.rs/rss" htmlUrl="https://lobste.rs/" />
+<outline type="rss" text="Lobsters" title="Lobsters" xmlUrl="https://lobste.rs/rss" htmlUrl="https://lobste.rs/" />
       <outline type="rss" text="TabNews — Recentes" title="TabNews — Recentes" xmlUrl="https://www.tabnews.com.br/recentes/rss" htmlUrl="https://www.tabnews.com.br/" />
       <outline type="rss" text="DEV Community" title="DEV Community" xmlUrl="https://dev.to/feed" htmlUrl="https://dev.to/" />
     </outline>
     <outline text="Frontend" title="Frontend">
       <outline type="rss" text="CSS-Tricks" title="CSS-Tricks" xmlUrl="https://css-tricks.com/feed/" htmlUrl="https://css-tricks.com/" />
-      <outline type="rss" text="web.dev" title="web.dev" xmlUrl="https://web.dev/feed.xml" htmlUrl="https://web.dev/" />
-      <outline type="rss" text="React Blog" title="React Blog" xmlUrl="https://react.dev/rss.xml" htmlUrl="https://react.dev/" />
-      <outline type="rss" text="Vue.js Blog" title="Vue.js Blog" xmlUrl="https://blog.vuejs.org/feed.rss" htmlUrl="https://blog.vuejs.org/" />
-      <outline type="rss" text="Smashing Magazine" title="Smashing Magazine" xmlUrl="https://www.smashingmagazine.com/feed/" htmlUrl="https://www.smashingmagazine.com/" />
+<outline type="rss" text="Smashing Magazine" title="Smashing Magazine" xmlUrl="https://www.smashingmagazine.com/feed/" htmlUrl="https://www.smashingmagazine.com/" />
     </outline>
     <outline text="Backend" title="Backend">
-      <outline type="rss" text="Go Blog" title="Go Blog" xmlUrl="https://go.dev/blog/feed.atom" htmlUrl="https://go.dev/blog/" />
-      <outline type="rss" text="Rust Blog" title="Rust Blog" xmlUrl="https://blog.rust-lang.org/feed.xml" htmlUrl="https://blog.rust-lang.org/" />
+<outline type="rss" text="Rust Blog" title="Rust Blog" xmlUrl="https://blog.rust-lang.org/feed.xml" htmlUrl="https://blog.rust-lang.org/" />
       <outline type="rss" text="Node.js Blog" title="Node.js Blog" xmlUrl="https://nodejs.org/en/feed/blog.xml" htmlUrl="https://nodejs.org/en/blog/" />
-      <outline type="rss" text="TypeScript Blog" title="TypeScript Blog" xmlUrl="https://devblogs.microsoft.com/typescript/feed/" htmlUrl="https://devblogs.microsoft.com/typescript/" />
-      <outline type="rss" text="Stripe Engineering" title="Stripe Engineering" xmlUrl="https://stripe.com/blog/feed.rss" htmlUrl="https://stripe.com/blog" />
-    </outline>
+</outline>
     <outline text="DevOps" title="DevOps">
       <outline type="rss" text="Kubernetes Blog" title="Kubernetes Blog" xmlUrl="https://kubernetes.io/feed.xml" htmlUrl="https://kubernetes.io/blog/" />
       <outline type="rss" text="Docker Blog" title="Docker Blog" xmlUrl="https://www.docker.com/blog/feed/" htmlUrl="https://www.docker.com/blog/" />
@@ -42,33 +35,18 @@
       <outline type="rss" text="arXiv cs.DC" title="arXiv cs.DC" xmlUrl="https://rss.arxiv.org/rss/cs.DC" htmlUrl="https://arxiv.org/list/cs.DC/recent" />
     </outline>
     <outline text="Brasil" title="Brasil">
-      <outline type="rss" text="itexto Insights" title="itexto Insights" xmlUrl="https://insights.itexto.com.br/feed/" htmlUrl="https://insights.itexto.com.br/" />
-      <outline type="rss" text="guisso.dev" title="guisso.dev" xmlUrl="https://guisso.dev/rss.xml" htmlUrl="https://guisso.dev/blog/" />
-      <outline type="rss" text="Dyego Maas" title="Dyego Maas" xmlUrl="https://blog.dyegomaas.com.br/feed/" htmlUrl="https://blog.dyegomaas.com.br/" />
-      <outline type="rss" text="Código em Dia" title="Código em Dia" xmlUrl="https://codigoemdia.substack.com/feed" htmlUrl="https://codigoemdia.substack.com/" />
+<outline type="rss" text="Código em Dia" title="Código em Dia" xmlUrl="https://codigoemdia.substack.com/feed" htmlUrl="https://codigoemdia.substack.com/" />
       <outline type="rss" text="AkitaOnRails" title="AkitaOnRails" xmlUrl="https://www.akitaonrails.com/index.xml" htmlUrl="https://www.akitaonrails.com/" />
     </outline>
     <outline text="Eng Blogs" title="Eng Blogs">
       <outline type="rss" text="Netflix Tech Blog" title="Netflix Tech Blog" xmlUrl="https://netflixtechblog.com/feed" htmlUrl="https://netflixtechblog.com/" />
       <outline type="rss" text="Cloudflare Blog" title="Cloudflare Blog" xmlUrl="https://blog.cloudflare.com/rss/" htmlUrl="https://blog.cloudflare.com/" />
       <outline type="rss" text="Tailscale Blog" title="Tailscale Blog" xmlUrl="https://tailscale.com/blog/index.xml" htmlUrl="https://tailscale.com/blog/" />
-      <outline type="rss" text="Two Sigma Engineering" title="Two Sigma Engineering" xmlUrl="https://www.twosigma.com/topic/engineering/feed/" htmlUrl="https://www.twosigma.com/topic/engineering/" />
-      <outline type="rss" text="Dropbox Tech" title="Dropbox Tech" xmlUrl="https://dropbox.tech/feed" htmlUrl="https://dropbox.tech/" />
-      <outline type="rss" text="GitHub Blog Engineering" title="GitHub Blog Engineering" xmlUrl="https://github.blog/engineering/feed/" htmlUrl="https://github.blog/engineering/" />
-      <outline type="rss" text="Meta Engineering" title="Meta Engineering" xmlUrl="https://engineering.fb.com/feed/" htmlUrl="https://engineering.fb.com/" />
-      <outline type="rss" text="Google Developers Blog" title="Google Developers Blog" xmlUrl="https://developers.googleblog.com/feeds/posts/default" htmlUrl="https://developers.googleblog.com/" />
-      <outline type="rss" text="AWS Architecture" title="AWS Architecture" xmlUrl="https://aws.amazon.com/blogs/architecture/feed/" htmlUrl="https://aws.amazon.com/blogs/architecture/" />
+<outline type="rss" text="Meta Engineering" title="Meta Engineering" xmlUrl="https://engineering.fb.com/feed/" htmlUrl="https://engineering.fb.com/" />
+<outline type="rss" text="AWS Architecture" title="AWS Architecture" xmlUrl="https://aws.amazon.com/blogs/architecture/feed/" htmlUrl="https://aws.amazon.com/blogs/architecture/" />
       <outline type="rss" text="Vercel Blog" title="Vercel Blog" xmlUrl="https://vercel.com/blog/feed.xml" htmlUrl="https://vercel.com/blog" />
-      <outline type="rss" text="Discord Engineering" title="Discord Engineering" xmlUrl="https://discord.com/blog/rss.xml" htmlUrl="https://discord.com/blog" />
-      <outline type="rss" text="Slack Engineering" title="Slack Engineering" xmlUrl="https://slack.engineering/feed/" htmlUrl="https://slack.engineering/" />
-      <outline type="rss" text="Spotify Engineering" title="Spotify Engineering" xmlUrl="https://engineering.atspotify.com/feed/" htmlUrl="https://engineering.atspotify.com/" />
-      <outline type="rss" text="Datadog Engineering" title="Datadog Engineering" xmlUrl="https://www.datadoghq.com/blog/index.xml" htmlUrl="https://www.datadoghq.com/blog/" />
-      <outline type="rss" text="Airbnb Engineering" title="Airbnb Engineering" xmlUrl="https://medium.com/feed/airbnb-engineering" htmlUrl="https://medium.com/airbnb-engineering" />
-      <outline type="rss" text="Julia Evans" title="Julia Evans" xmlUrl="https://jvns.ca/atom.xml" htmlUrl="https://jvns.ca/" />
-      <outline type="rss" text="Eli Bendersky" title="Eli Bendersky" xmlUrl="https://eli.thegreenplace.net/feeds/all.atom.xml" htmlUrl="https://eli.thegreenplace.net/" />
-      <outline type="rss" text="Heroku Blog" title="Heroku Blog" xmlUrl="https://blog.heroku.com/feed" htmlUrl="https://blog.heroku.com/" />
-      <outline type="rss" text="PostgreSQL Planet" title="PostgreSQL Planet" xmlUrl="https://planet.postgresql.org/rss20.xml" htmlUrl="https://planet.postgresql.org/" />
-      <outline type="rss" text="Fly.io Blog" title="Fly.io Blog" xmlUrl="https://fly.io/blog/feed.xml" htmlUrl="https://fly.io/blog/" />
-    </outline>
+<outline type="rss" text="Datadog Engineering" title="Datadog Engineering" xmlUrl="https://www.datadoghq.com/blog/index.xml" htmlUrl="https://www.datadoghq.com/blog/" />
+<outline type="rss" text="PostgreSQL Planet" title="PostgreSQL Planet" xmlUrl="https://planet.postgresql.org/rss20.xml" htmlUrl="https://planet.postgresql.org/" />
+</outline>
   </body>
 </opml>

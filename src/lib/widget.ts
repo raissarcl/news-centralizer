@@ -11,7 +11,7 @@ export async function syncAndroidWidget(): Promise<void> {
   try {
     const unread = countUnreadItems();
     NewsCentralizerWidgetSync.updateWidgetData(
-      JSON.stringify({ unread, updatedAt: new Date().toISOString() })
+      JSON.stringify({ unread, updatedAt: new Date().toISOString() }),
     );
   } catch {
     // widget module optional until prebuild

@@ -36,7 +36,7 @@ const WINDOWS_1252_C1: Record<number, number> = {
 /** Hermes/RN TextDecoder often only supports UTF-8 — decode Latin-1 manually. */
 function decodeSingleByte(
   bytes: Uint8Array,
-  mapC1?: Record<number, number>
+  mapC1?: Record<number, number>,
 ): string {
   const chars: string[] = new Array(bytes.length);
   for (let i = 0; i < bytes.length; i++) {
@@ -65,7 +65,9 @@ function normalizeCharset(raw: string): DecodableCharset | null {
   return null;
 }
 
-function charsetFromContentType(contentType: string | null): DecodableCharset | null {
+function charsetFromContentType(
+  contentType: string | null,
+): DecodableCharset | null {
   if (!contentType) return null;
   const match = /charset\s*=\s*["']?([^"';\s]+)/i.exec(contentType);
   return match ? normalizeCharset(match[1]) : null;
@@ -109,7 +111,7 @@ function decodeBytes(bytes: Uint8Array, charset: DecodableCharset): string {
  */
 export function decodeFeedBody(
   bytes: Uint8Array,
-  contentType: string | null
+  contentType: string | null,
 ): string {
   const charset =
     charsetFromContentType(contentType) ??

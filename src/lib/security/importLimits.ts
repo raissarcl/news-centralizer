@@ -15,7 +15,7 @@ export function assertImportFileSize(byteLength: number): void {
 
 export function capFeedInputs(
   inputs: OpmlFeedInput[],
-  mode: 'merge' | 'replace'
+  mode: 'merge' | 'replace',
 ): OpmlFeedInput[] {
   const max =
     mode === 'replace'
@@ -26,7 +26,7 @@ export function capFeedInputs(
 
 export function filterValidFeedInputs(
   inputs: OpmlFeedInput[],
-  options: FeedUrlOptions = {}
+  options: FeedUrlOptions = {},
 ): { valid: OpmlFeedInput[]; skipped: number } {
   const valid: OpmlFeedInput[] = [];
   let skipped = 0;

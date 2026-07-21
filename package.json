@@ -35,7 +35,13 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "@types/react": "~19.2.2",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~56.0.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "prettier": "^3.9.6",
     "tsx": "^4.22.4",
     "typescript": "~5.9.2"
   },
@@ -50,8 +56,14 @@
     "sync-general-feeds": "tsx scripts/sync-general-feeds-opml.ts",
     "sync-general-feeds:local": "tsx scripts/sync-general-feeds-opml.ts --local",
     "audit-general-feeds": "tsx scripts/audit-general-feeds.ts",
+    "prune-inactive-feeds": "tsx scripts/prune-inactive-feeds.ts",
+    "prune-inactive-feeds:apply": "tsx scripts/prune-inactive-feeds.ts --apply",
     "test:unit": "tsx scripts/test-unit.ts",
-    "test:security": "tsx scripts/test-security.ts"
+    "test:security": "tsx scripts/test-security.ts",
+    "lint": "expo lint app src scripts",
+    "lint:fix": "expo lint app src scripts --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "private": true
 }

@@ -24,7 +24,9 @@ export function FeedFolderMembershipSwitch({
   const toggleFeedFolder = useFeedsStore((s) => s.toggleFeedFolder);
   const feed = feeds.find((f) => f.id === feedId);
   const inFolder = feed ? feedInFolder(feed, folderId) : false;
-  const label = folderName ? `${t.inThisFolder}: ${folderName}` : t.inThisFolder;
+  const label = folderName
+    ? `${t.inThisFolder}: ${folderName}`
+    : t.inThisFolder;
 
   const onToggle = () => {
     void toggleFeedFolder(feedId, folderId).then((ok) => {
@@ -53,7 +55,10 @@ export function FeedFolderMembershipSwitch({
         accessibilityLabel={label}
         {...switchProps}
       />
-      <Text style={{ fontSize: 10, textAlign: 'center', color: tokens.textMuted }} numberOfLines={2}>
+      <Text
+        style={{ fontSize: 10, textAlign: 'center', color: tokens.textMuted }}
+        numberOfLines={2}
+      >
         {t.inThisFolder}
       </Text>
     </View>

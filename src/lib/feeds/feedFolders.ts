@@ -16,13 +16,15 @@ export function isInboxFolderId(folderId: string): boolean {
 
 export function normalizeFeedFolderIds(
   folderIds: string[],
-  spaceId: string = COMPUTING_SPACE_ID
+  spaceId: string = COMPUTING_SPACE_ID,
 ): string[] {
   const unique = [
     ...new Set(
       folderIds
         .filter(Boolean)
-        .map((id) => (id === LEGACY_INBOX_FOLDER_ID ? inboxFolderId(spaceId) : id))
+        .map((id) =>
+          id === LEGACY_INBOX_FOLDER_ID ? inboxFolderId(spaceId) : id,
+        ),
     ),
   ];
   return unique.length > 0 ? unique : [inboxFolderId(spaceId)];
@@ -39,7 +41,10 @@ export function feedInFolder(feed: FeedSource, folderId: string): boolean {
   return getFeedFolderIds(feed).includes(folderId);
 }
 
-export function addFeedToFolder(feed: FeedSource, folderId: string): FeedSource {
+export function addFeedToFolder(
+  feed: FeedSource,
+  folderId: string,
+): FeedSource {
   const ids = getFeedFolderIds(feed);
   if (ids.includes(folderId)) return feed;
   return {
@@ -48,7 +53,10 @@ export function addFeedToFolder(feed: FeedSource, folderId: string): FeedSource 
   };
 }
 
-export function removeFeedFromFolder(feed: FeedSource, folderId: string): FeedSource {
+export function removeFeedFromFolder(
+  feed: FeedSource,
+  folderId: string,
+): FeedSource {
   const ids = getFeedFolderIds(feed).filter((id) => id !== folderId);
   return {
     ...feed,
@@ -58,7 +66,7 @@ export function removeFeedFromFolder(feed: FeedSource, folderId: string): FeedSo
 
 export function toggleFeedFolderMembership(
   feed: FeedSource,
-  folderId: string
+  folderId: string,
 ): FeedSource | null {
   if (feedInFolder(feed, folderId)) {
     const ids = getFeedFolderIds(feed);
@@ -70,7 +78,7 @@ export function toggleFeedFolderMembership(
 
 export function formatFeedFolderNames(
   feed: FeedSource,
-  folders: Folder[]
+  folders: Folder[],
 ): string {
   const byId = new Map(folders.map((f) => [f.id, f.name]));
   return getFeedFolderIds(feed)
@@ -80,8 +88,8 @@ export function formatFeedFolderNames(
 
 export function retentionDaysForFeed(
   feed: FeedSource,
-  folders: Array<{ id: string; retentionDays?: number }>,
-  globalRetentionDays: number
+  folders: { id: string; retentionDays?: number }[],
+  globalRetentionDays: number,
 ): number {
   let days = globalRetentionDays;
   for (const folderId of getFeedFolderIds(feed)) {

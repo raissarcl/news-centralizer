@@ -34,14 +34,22 @@ function detectFormat(xml: string): string {
 }
 
 function countRawItems(xml: string): number {
-  return (xml.match(/<item[\s>]/gi) ?? []).length + (xml.match(/<entry[\s>]/gi) ?? []).length;
+  return (
+    (xml.match(/<item[\s>]/gi) ?? []).length +
+    (xml.match(/<entry[\s>]/gi) ?? []).length
+  );
 }
 
-async function probe(title: string, url: string, enabled?: boolean): Promise<Row> {
+async function probe(
+  title: string,
+  url: string,
+  enabled?: boolean,
+): Promise<Row> {
   try {
     const res = await fetch(url, {
       headers: {
-        Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
+        Accept:
+          'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
         'User-Agent': 'NewsCentralizerAudit/1.0',
       },
       redirect: 'follow',
@@ -100,12 +108,14 @@ async function main() {
 
   const bad = rows.filter((r) => r.parsed === 0);
   const ok = rows.filter((r) => r.parsed > 0);
-  const folha = rows.filter((r) => /folha/i.test(r.title) || /folha\.uol/i.test(r.url));
+  const folha = rows.filter(
+    (r) => /folha/i.test(r.title) || /folha\.uol/i.test(r.url),
+  );
 
   console.log('=== FOLHA ===');
   for (const r of folha) {
     console.log(
-      `${r.parsed > 0 ? 'OK' : 'FAIL'} | parsed=${r.parsed} raw~${r.rawHint} | ${r.format} | HTTP ${r.http} | ${r.title}`
+      `${r.parsed > 0 ? 'OK' : 'FAIL'} | parsed=${r.parsed} raw~${r.rawHint} | ${r.format} | HTTP ${r.http} | ${r.title}`,
     );
     console.log(`     ${r.note} | ${r.url}`);
   }
@@ -113,7 +123,7 @@ async function main() {
   console.log('\n=== FAIL (parsed=0) — todo o seed ===');
   for (const r of bad) {
     console.log(
-      `FAIL | ${r.title} | HTTP ${r.http} | ${r.format} | raw~${r.rawHint} | ${r.note}`
+      `FAIL | ${r.title} | HTTP ${r.http} | ${r.format} | raw~${r.rawHint} | ${r.note}`,
     );
     console.log(`     ${r.url}`);
   }

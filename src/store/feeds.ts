@@ -1,7 +1,7 @@
-import { create } from "zustand";
-import { DEFAULT_FEEDS_OPML } from "../data/defaultFeedsOpml";
-import { DEFAULT_GENERAL_FEEDS_OPML } from "../data/generalFeedsSeed";
-import { faviconUrlForFeed } from "../lib/favicon";
+import { create } from 'zustand';
+import { DEFAULT_FEEDS_OPML } from '../data/defaultFeedsOpml';
+import { DEFAULT_GENERAL_FEEDS_OPML } from '../data/defaultGeneralFeedsOpml';
+import { faviconUrlForFeed } from '../lib/favicon';
 import {
   addFeedToFolder,
   feedInFolder,
@@ -11,35 +11,40 @@ import {
   normalizeFeedFolderIds,
   removeFeedFromFolder,
   toggleFeedFolderMembership,
-} from "../lib/feeds/feedFolders";
+} from '../lib/feeds/feedFolders';
+import {
+  applyRefreshOntoCurrent,
+  isFeedPaused,
+  mergeRefreshResults,
+} from '../lib/feeds/refreshMerge';
 import {
   filterItemsForFeed,
   filterItemsForFolder,
   selectVisibleItems,
-} from "../lib/feeds/selectItems";
-import { createId } from "../lib/id";
-import { normalizeFeedUrl, normalizeItemLink } from "../lib/items/dedupeItems";
-import { sortItemsByPublishedDesc } from "../lib/items/sortItems";
-import { flattenOpmlFeeds, parseOpml, type OpmlFeedInput } from "../lib/opml";
+} from '../lib/feeds/selectItems';
+import { createId } from '../lib/id';
+import { sortItemsByPublishedDesc } from '../lib/items/sortItems';
+import { applyOpmlImport } from '../lib/opml/importFeeds';
 import {
-  applyRetention,
-  fetchFeed,
-  mapPool,
-  REFRESH_CONCURRENCY,
-} from "../lib/rss/fetchFeed";
+  buildSeedFromOpml,
+  ensureInboxFolder,
+  ensureSpaceInboxes,
+} from '../lib/opml/seedFromOpml';
+import type { OpmlFeedInput } from '../lib/opml';
+import { applyRetention } from '../lib/rss/fetchFeed';
 import {
   capFeedInputs,
   filterValidFeedInputs,
-} from "../lib/security/importLimits";
-import { validateFeedUrl } from "../lib/security/urls";
-import { isGeneralOnly } from "../lib/appMode";
+} from '../lib/security/importLimits';
+import { validateFeedUrl } from '../lib/security/urls';
+import { isGeneralOnly } from '../lib/appMode';
 import {
   COMPUTING_SPACE_ID,
   ensureDefaultSpaces,
   GENERAL_SPACE_ID,
   getDefaultSpaces,
   resolveActiveSpaceId,
-} from "../lib/spaces";
+} from '../lib/spaces';
 import type {
   FeedItem,
   FeedSource,
@@ -47,56 +52,30 @@ import type {
   Settings,
   Space,
   Tag,
-  TimelineFilter,
-  TimelinePeriod,
-} from "../types";
-import { buildBlob, loadBlob, saveBlob } from "./persistence";
-import { useSettingsStore } from "./settings";
+} from '../types';
+import {
+  hydrateApp,
+  persistApp,
+  resolveActiveSpaceFromStores,
+} from './persistApp';
+import { useSettingsStore } from './settings';
+import { useTimelineUiStore } from './timelineUi';
 
 export { filterItemsForFeed, filterItemsForFolder, selectVisibleItems };
+export {
+  applyRefreshOntoCurrent,
+  mergeRefreshResults,
+  isFeedPaused,
+  refreshStateAfterFetch,
+} from '../lib/feeds/refreshMerge';
 
 async function afterDataChange(): Promise<void> {
-  const { syncAndroidWidget } = await import("../lib/widget");
+  const { syncAndroidWidget } = await import('../lib/widget');
   await syncAndroidWidget();
 }
 
-const REFRESH_FAIL_THRESHOLD = 3;
-const REFRESH_PAUSE_MS = 15 * 60 * 1000;
-const INBOX_FOLDER_NAME = "Caixa de entrada";
-
 function feedUrlOptions() {
   return { allowHttp: useSettingsStore.getState().settings.allowHttpFeeds };
-}
-
-function isFeedPaused(feed: FeedSource): boolean {
-  if (!feed.refreshPausedUntil) return false;
-  return new Date(feed.refreshPausedUntil).getTime() > Date.now();
-}
-
-function refreshStateAfterFetch(
-  feed: FeedSource,
-  error?: string,
-): Pick<FeedSource, "refreshFailCount" | "refreshPausedUntil"> {
-  if (!error) {
-    return { refreshFailCount: 0, refreshPausedUntil: undefined };
-  }
-  const failCount = (feed.refreshFailCount ?? 0) + 1;
-  if (failCount >= REFRESH_FAIL_THRESHOLD) {
-    return {
-      refreshFailCount: failCount,
-      refreshPausedUntil: new Date(Date.now() + REFRESH_PAUSE_MS).toISOString(),
-    };
-  }
-  return {
-    refreshFailCount: failCount,
-    refreshPausedUntil: feed.refreshPausedUntil,
-  };
-}
-
-function getActiveSpaceId(): string {
-  const settings = useSettingsStore.getState().settings;
-  const spaces = useFeedsStore.getState().spaces;
-  return resolveActiveSpaceId(settings.activeSpaceId, spaces);
 }
 
 export type RefreshProgress = {
@@ -113,12 +92,6 @@ type FeedsState = {
   hydrated: boolean;
   refreshing: boolean;
   refreshProgress: RefreshProgress | null;
-  timelineFilter: TimelineFilter;
-  timelinePeriod: TimelinePeriod;
-  searchQuery: string;
-  selectedTagId: string | null;
-  selectedFolderId: string | null;
-  selectedFeedIds: string[];
   hydrate: () => Promise<void>;
   persist: (settings?: Settings) => Promise<void>;
   seedDefaultsIfNeeded: () => Promise<void>;
@@ -134,27 +107,20 @@ type FeedsState = {
   clearAllItems: () => Promise<void>;
   updateFeed: (
     feedId: string,
-    patch: Partial<Pick<FeedSource, "title" | "url" | "folderIds" | "siteUrl">>,
+    patch: Partial<Pick<FeedSource, 'title' | 'url' | 'folderIds' | 'siteUrl'>>,
   ) => Promise<void>;
   toggleFeedEnabled: (feedId: string) => Promise<void>;
   resumeFeed: (feedId: string) => Promise<void>;
   resumeAllPausedFeeds: () => Promise<void>;
   markItemRead: (itemId: string, read?: boolean) => Promise<void>;
   toggleItemStarred: (itemId: string) => Promise<void>;
-  setTimelineFilter: (filter: TimelineFilter) => void;
-  setTimelinePeriod: (period: TimelinePeriod) => void;
-  setSearchQuery: (query: string) => void;
-  setSelectedTagId: (tagId: string | null) => void;
-  setSelectedFolderId: (folderId: string | null) => void;
-  setSelectedFeedIds: (feedIds: string[]) => void;
-  resetTimelineFilters: () => void;
   addFeed: (input: {
     title: string;
     url: string;
     siteUrl?: string;
     folderId: string;
     tagIds?: string[];
-  }) => Promise<"ok" | "invalid" | "duplicate">;
+  }) => Promise<'ok' | 'invalid' | 'duplicate'>;
   removeFeed: (feedId: string) => Promise<void>;
   addFolder: (name: string) => Promise<void>;
   renameFolder: (folderId: string, name: string) => Promise<void>;
@@ -170,7 +136,7 @@ type FeedsState = {
   assignTagsToFeed: (feedId: string, tagIds: string[]) => Promise<void>;
   importOpmlFeeds: (
     feeds: OpmlFeedInput[],
-    mode: "merge" | "replace",
+    mode: 'merge' | 'replace',
   ) => Promise<{ added: number; skipped: number }>;
   replaceAll: (payload: {
     spaces?: Space[];
@@ -181,276 +147,6 @@ type FeedsState = {
   }) => Promise<void>;
 };
 
-function ensureInboxFolder(folders: Folder[], spaceId: string): Folder[] {
-  const id = inboxFolderId(spaceId);
-  if (folders.some((f) => f.id === id)) {
-    return folders.map((f) =>
-      f.id === id ? { ...f, name: INBOX_FOLDER_NAME, spaceId } : f,
-    );
-  }
-  return [{ id, name: INBOX_FOLDER_NAME, spaceId, sortOrder: -1 }, ...folders];
-}
-
-function ensureSpaceInboxes(folders: Folder[], spaces: Space[]): Folder[] {
-  let next = [...folders];
-  for (const space of spaces) {
-    next = ensureInboxFolder(next, space.id);
-  }
-  return next;
-}
-
-function slugifyFolder(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function buildSeedFromOpml(
-  opml: string,
-  spaceId: string,
-): {
-  folders: Folder[];
-  feeds: FeedSource[];
-} {
-  const outlines = parseOpml(opml);
-  const feedInputs = flattenOpmlFeeds(outlines).filter(
-    (input) => validateFeedUrl(input.url, feedUrlOptions()).ok,
-  );
-  const folderNames = [
-    ...new Set(
-      feedInputs.map((f) => f.folderName).filter((n): n is string => !!n),
-    ),
-  ];
-  const folders: Folder[] = folderNames.map((name, index) => {
-    const base = slugifyFolder(name) || `folder-${index}`;
-    const id = `${spaceId}-${base}`;
-    const isPapers = name.toLowerCase().includes("papers");
-    return {
-      id,
-      name,
-      spaceId,
-      sortOrder: index,
-      retentionDays: isPapers ? 7 : undefined,
-    };
-  });
-  const folderIdByName = new Map(folders.map((f) => [f.name, f.id]));
-  const inboxId = inboxFolderId(spaceId);
-
-  const feeds: FeedSource[] = feedInputs.map((input) => {
-    const folderNameLower = input.folderName?.toLowerCase() ?? "";
-    const enabledFromAttr = input.enabled;
-    const enabled =
-      enabledFromAttr !== undefined
-        ? enabledFromAttr
-        : !folderNameLower.includes("papers");
-    return {
-      id: createId("feed"),
-      title: input.title,
-      url: input.url,
-      siteUrl: input.siteUrl,
-      favicon: faviconUrlForFeed(input.siteUrl, input.url),
-      spaceId,
-      folderIds: normalizeFeedFolderIds(
-        [
-          input.folderName
-            ? (folderIdByName.get(input.folderName) ?? inboxId)
-            : inboxId,
-        ],
-        spaceId,
-      ),
-      tagIds: [],
-      enabled,
-    };
-  });
-
-  return {
-    folders: ensureInboxFolder(folders, spaceId),
-    feeds,
-  };
-}
-
-/**
- * Adds feeds/folders from the default Geral OPML that are missing on this
- * install (by URL). Does not remove user-added sources or change toggles.
- */
-function mergeMissingSeedFeeds(
-  existingFolders: Folder[],
-  existingFeeds: FeedSource[],
-  spaceId: string,
-  opml: string,
-): { folders: Folder[]; feeds: FeedSource[]; added: number } {
-  const seeded = buildSeedFromOpml(opml, spaceId);
-  let folders = [...existingFolders];
-  const existingFolderIds = new Set(
-    folders.filter((f) => f.spaceId === spaceId).map((f) => f.id),
-  );
-  const folderIdByName = new Map(
-    folders.filter((f) => f.spaceId === spaceId).map((f) => [f.name, f.id]),
-  );
-
-  for (const folder of seeded.folders) {
-    if (isInboxFolderId(folder.id)) continue;
-    if (existingFolderIds.has(folder.id) || folderIdByName.has(folder.name)) {
-      continue;
-    }
-    folders.push(folder);
-    existingFolderIds.add(folder.id);
-    folderIdByName.set(folder.name, folder.id);
-  }
-  folders = ensureInboxFolder(folders, spaceId);
-
-  const existingUrls = new Set(
-    existingFeeds
-      .filter((f) => f.spaceId === spaceId)
-      .map((f) => normalizeFeedUrl(f.url)),
-  );
-  const inboxId = inboxFolderId(spaceId);
-  const toAdd: FeedSource[] = [];
-
-  for (const feed of seeded.feeds) {
-    if (existingUrls.has(normalizeFeedUrl(feed.url))) continue;
-    const seedFolderId = feed.folderIds[0] ?? inboxId;
-    const seedFolderName = seeded.folders.find(
-      (f) => f.id === seedFolderId,
-    )?.name;
-    const folderId =
-      (existingFolderIds.has(seedFolderId) ? seedFolderId : undefined) ??
-      (seedFolderName ? folderIdByName.get(seedFolderName) : undefined) ??
-      inboxId;
-    toAdd.push({
-      ...feed,
-      id: createId("feed"),
-      folderIds: normalizeFeedFolderIds([folderId], spaceId),
-    });
-    existingUrls.add(normalizeFeedUrl(feed.url));
-  }
-
-  return {
-    folders,
-    feeds: [...existingFeeds, ...toAdd],
-    added: toAdd.length,
-  };
-}
-
-async function mergeRefreshResults(
-  allFeeds: FeedSource[],
-  enabledFeeds: FeedSource[],
-  existingItems: FeedItem[],
-  folders: Folder[],
-  onProgress?: (done: number, total: number) => void,
-): Promise<{
-  feeds: FeedSource[];
-  items: FeedItem[];
-  newCountBySpace: Record<string, number>;
-  newHeadlinesBySpace: Record<string, string[]>;
-}> {
-  let done = 0;
-  const feedById = new Map(allFeeds.map((f) => [f.id, f]));
-  const existingById = new Map(existingItems.map((i) => [i.id, i]));
-  // Dedupe links within the same space only — allows the same story in both spaces.
-  const existingBySpaceLink = new Map<string, FeedItem>();
-  for (const item of existingItems) {
-    const linkKey = normalizeItemLink(item.link);
-    if (!linkKey) continue;
-    const spaceId = feedById.get(item.feedId)?.spaceId;
-    if (!spaceId) continue;
-    existingBySpaceLink.set(`${spaceId}::${linkKey}`, item);
-  }
-  const feedUpdates = new Map<string, FeedSource>();
-  const newCountBySpace: Record<string, number> = {};
-  const newHeadlinesBySpace: Record<string, string[]> = {};
-
-  await mapPool(enabledFeeds, REFRESH_CONCURRENCY, async (feed) => {
-    if (isFeedPaused(feed)) {
-      done += 1;
-      onProgress?.(done, enabledFeeds.length);
-      return;
-    }
-
-    const result = await fetchFeed(feed);
-    done += 1;
-    onProgress?.(done, enabledFeeds.length);
-
-    const refreshState = refreshStateAfterFetch(feed, result.error);
-    const updatedFeed: FeedSource = {
-      ...feed,
-      ...refreshState,
-      favicon: feed.favicon ?? faviconUrlForFeed(feed.siteUrl, feed.url),
-      lastFetchedAt: new Date().toISOString(),
-      etag: result.etag ?? feed.etag,
-      lastModified: result.lastModified ?? feed.lastModified,
-      lastError: result.error,
-    };
-    feedUpdates.set(feed.id, updatedFeed);
-
-    if (!result.notModified) {
-      for (const entry of result.entries) {
-        const linkKey = normalizeItemLink(entry.link);
-        if (linkKey) {
-          const spaceLinkKey = `${feed.spaceId}::${linkKey}`;
-          const dupe = existingBySpaceLink.get(spaceLinkKey);
-          if (dupe) {
-            const prev = existingById.get(dupe.id)!;
-            if (!prev.imageUrl && entry.imageUrl) {
-              existingById.set(dupe.id, { ...prev, imageUrl: entry.imageUrl });
-            }
-            continue;
-          }
-        }
-
-        if (!existingById.has(entry.id)) {
-          const newItem: FeedItem = {
-            id: entry.id,
-            feedId: feed.id,
-            title: entry.title,
-            link: entry.link,
-            summary: entry.summary,
-            imageUrl: entry.imageUrl,
-            publishedAt: entry.publishedAt,
-            read: false,
-            starred: false,
-          };
-          existingById.set(entry.id, newItem);
-          if (linkKey) {
-            existingBySpaceLink.set(`${feed.spaceId}::${linkKey}`, newItem);
-          }
-          newCountBySpace[feed.spaceId] = (newCountBySpace[feed.spaceId] ?? 0) + 1;
-          const headlines = newHeadlinesBySpace[feed.spaceId] ?? [];
-          if (headlines.length < 5) {
-            headlines.push(entry.title);
-            newHeadlinesBySpace[feed.spaceId] = headlines;
-          }
-        } else {
-          const prev = existingById.get(entry.id)!;
-          if (!prev.imageUrl && entry.imageUrl) {
-            existingById.set(entry.id, { ...prev, imageUrl: entry.imageUrl });
-          }
-        }
-      }
-    }
-  });
-
-  const nextFeeds = allFeeds.map((f) => feedUpdates.get(f.id) ?? f);
-  let nextItems = sortItemsByPublishedDesc([...existingById.values()]);
-  const settings = useSettingsStore.getState().settings;
-  nextItems = applyRetention(
-    nextItems,
-    settings.retentionDays,
-    nextFeeds,
-    folders,
-  );
-
-  return {
-    feeds: nextFeeds,
-    items: nextItems,
-    newCountBySpace,
-    newHeadlinesBySpace,
-  };
-}
-
 export const useFeedsStore = create<FeedsState>((set, get) => ({
   spaces: getDefaultSpaces(),
   feeds: [],
@@ -460,29 +156,13 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
   hydrated: false,
   refreshing: false,
   refreshProgress: null,
-  timelineFilter: "all",
-  timelinePeriod: "all",
-  searchQuery: "",
-  selectedTagId: null,
-  selectedFolderId: null,
-  selectedFeedIds: [],
 
   hydrate: async () => {
-    const blob = await loadBlob();
-    set({
-      spaces: ensureDefaultSpaces(blob.spaces),
-      feeds: blob.feeds,
-      items: sortItemsByPublishedDesc(blob.items),
-      folders: blob.folders,
-      tags: blob.tags,
-      hydrated: true,
-    });
+    await hydrateApp();
   },
 
   persist: async (settings) => {
-    const s = settings ?? useSettingsStore.getState().settings;
-    const { spaces, feeds, items, folders, tags } = get();
-    await saveBlob(buildBlob(spaces, feeds, items, folders, tags, s));
+    await persistApp(settings);
   },
 
   seedDefaultsIfNeeded: async () => {
@@ -493,9 +173,10 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     );
     if (settings.seeded || computingFeeds.length > 0) return;
 
-    const { folders, feeds } = buildSeedFromOpml(
+    const seeded = buildSeedFromOpml(
       DEFAULT_FEEDS_OPML,
       COMPUTING_SPACE_ID,
+      feedUrlOptions(),
     );
     const spaces = ensureDefaultSpaces(get().spaces);
     set({
@@ -503,17 +184,16 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       folders: ensureSpaceInboxes(
         [
           ...get().folders.filter((f) => f.spaceId !== COMPUTING_SPACE_ID),
-          ...folders,
+          ...seeded.folders,
         ],
         spaces,
       ),
       feeds: [
         ...get().feeds.filter((f) => f.spaceId !== COMPUTING_SPACE_ID),
-        ...feeds,
+        ...seeded.feeds,
       ],
     });
     await useSettingsStore.getState().update({ seeded: true });
-    await get().persist({ ...settings, seeded: true });
   },
 
   seedGeneralIfNeeded: async () => {
@@ -521,77 +201,52 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     const generalFeeds = get().feeds.filter(
       (f) => f.spaceId === GENERAL_SPACE_ID,
     );
-
-    if (!settings.seededGeneral && generalFeeds.length === 0) {
-      const { folders, feeds } = buildSeedFromOpml(
-        DEFAULT_GENERAL_FEEDS_OPML,
-        GENERAL_SPACE_ID,
-      );
-      const spaces = ensureDefaultSpaces(get().spaces);
-      set({
-        spaces,
-        folders: ensureSpaceInboxes(
-          [
-            ...get().folders.filter((f) => f.spaceId !== GENERAL_SPACE_ID),
-            ...folders,
-          ],
-          spaces,
-        ),
-        feeds: [
-          ...get().feeds.filter((f) => f.spaceId !== GENERAL_SPACE_ID),
-          ...feeds,
-        ],
-      });
-      await useSettingsStore.getState().update({ seededGeneral: true });
-      await get().persist({ ...settings, seededGeneral: true });
+    if (settings.seededGeneral || generalFeeds.length > 0) {
+      if (!settings.seededGeneral) {
+        await useSettingsStore.getState().update({ seededGeneral: true });
+      }
       return;
     }
 
-    if (!settings.seededGeneral) {
-      await useSettingsStore.getState().update({ seededGeneral: true });
-    }
-
-    // Catalog grows over time — merge missing seed URLs without wiping user feeds.
-    const merged = mergeMissingSeedFeeds(
-      get().folders,
-      get().feeds,
-      GENERAL_SPACE_ID,
+    const seeded = buildSeedFromOpml(
       DEFAULT_GENERAL_FEEDS_OPML,
+      GENERAL_SPACE_ID,
+      feedUrlOptions(),
     );
-    if (merged.added > 0) {
-      set({ folders: merged.folders, feeds: merged.feeds });
-      await get().persist();
-    }
+    const spaces = ensureDefaultSpaces(get().spaces);
+    set({
+      spaces,
+      folders: ensureSpaceInboxes(
+        [
+          ...get().folders.filter((f) => f.spaceId !== GENERAL_SPACE_ID),
+          ...seeded.folders,
+        ],
+        spaces,
+      ),
+      feeds: [
+        ...get().feeds.filter((f) => f.spaceId !== GENERAL_SPACE_ID),
+        ...seeded.feeds,
+      ],
+    });
+    await useSettingsStore.getState().update({ seededGeneral: true });
   },
 
   setActiveSpaceId: async (spaceId) => {
     const spaces = get().spaces;
     if (!spaces.some((s) => s.id === spaceId)) return;
-    if (getActiveSpaceId() === spaceId) return;
-    get().resetTimelineFilters();
+    if (resolveActiveSpaceFromStores() === spaceId) return;
+    useTimelineUiStore.getState().resetTimelineFilters();
     await useSettingsStore.getState().update({ activeSpaceId: spaceId });
-    // Feeds of each space refresh only while that space is active.
     if (useSettingsStore.getState().settings.refreshOnOpen) {
       await get().refreshAll();
     }
   },
 
-  resetTimelineFilters: () =>
-    set({
-      timelineFilter: "all",
-      timelinePeriod: "all",
-      searchQuery: "",
-      selectedTagId: null,
-      selectedFolderId: null,
-      selectedFeedIds: [],
-    }),
-
   refreshAll: async () => {
     const state = get();
-    const activeSpaceId = getActiveSpaceId();
+    const activeSpaceId = resolveActiveSpaceFromStores();
     const enabledFeeds = state.feeds.filter(
-      (f) =>
-        f.spaceId === activeSpaceId && f.enabled && !isFeedPaused(f),
+      (f) => f.spaceId === activeSpaceId && f.enabled && !isFeedPaused(f),
     );
     if (enabledFeeds.length === 0) return { newCount: 0, newHeadlines: [] };
 
@@ -600,14 +255,27 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       refreshProgress: { done: 0, total: enabledFeeds.length },
     });
 
-    const { feeds, items, newCountBySpace, newHeadlinesBySpace } =
-      await mergeRefreshResults(
-        state.feeds,
-        enabledFeeds,
-        state.items,
-        state.folders,
-        (done, total) => set({ refreshProgress: { done, total } }),
-      );
+    const {
+      feedUpdates,
+      newItems,
+      imagePatches,
+      newCountBySpace,
+      newHeadlinesBySpace,
+    } = await mergeRefreshResults(state.feeds, enabledFeeds, state.items, {
+      allowHttp: feedUrlOptions().allowHttp,
+      onProgress: (done, total) => set({ refreshProgress: { done, total } }),
+    });
+
+    const current = get();
+    const { feeds, items } = applyRefreshOntoCurrent(
+      current.feeds,
+      current.items,
+      feedUpdates,
+      newItems,
+      imagePatches,
+      current.folders,
+      useSettingsStore.getState().settings.retentionDays,
+    );
 
     set({
       feeds,
@@ -615,7 +283,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       refreshing: false,
       refreshProgress: null,
     });
-    await get().persist();
+    await persistApp();
     await afterDataChange();
 
     return {
@@ -626,22 +294,36 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
 
   refreshFeed: async (feedId) => {
     const state = get();
-    const activeSpaceId = getActiveSpaceId();
+    const activeSpaceId = resolveActiveSpaceFromStores();
     const feed = state.feeds.find((f) => f.id === feedId);
     if (!feed || !feed.enabled || feed.spaceId !== activeSpaceId)
       return { newCount: 0, newHeadlines: [] as string[] };
 
     set({ refreshing: true, refreshProgress: { done: 0, total: 1 } });
-    const { feeds, items, newCountBySpace, newHeadlinesBySpace } =
-      await mergeRefreshResults(
-        state.feeds,
-        [feed],
-        state.items,
-        state.folders,
-        () => set({ refreshProgress: { done: 1, total: 1 } }),
-      );
+    const {
+      feedUpdates,
+      newItems,
+      imagePatches,
+      newCountBySpace,
+      newHeadlinesBySpace,
+    } = await mergeRefreshResults(state.feeds, [feed], state.items, {
+      allowHttp: feedUrlOptions().allowHttp,
+      onProgress: () => set({ refreshProgress: { done: 1, total: 1 } }),
+    });
+
+    const current = get();
+    const { feeds, items } = applyRefreshOntoCurrent(
+      current.feeds,
+      current.items,
+      feedUpdates,
+      newItems,
+      imagePatches,
+      current.folders,
+      useSettingsStore.getState().settings.retentionDays,
+    );
+
     set({ feeds, items, refreshing: false, refreshProgress: null });
-    await get().persist();
+    await persistApp();
     await afterDataChange();
     return {
       newCount: newCountBySpace[feed.spaceId] ?? 0,
@@ -660,7 +342,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         feedIds.has(i.feedId) ? { ...i, read: true } : i,
       ),
     });
-    await get().persist();
+    await persistApp();
     await afterDataChange();
   },
 
@@ -674,13 +356,13 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       get().folders,
     );
     set({ items: sortItemsByPublishedDesc(nextItems) });
-    await get().persist();
+    await persistApp();
     await afterDataChange();
     return { removed: before - nextItems.length, remaining: nextItems.length };
   },
 
   removeReadItems: async () => {
-    const spaceId = getActiveSpaceId();
+    const spaceId = resolveActiveSpaceFromStores();
     const feedIds = new Set(
       get()
         .feeds.filter((f) => f.spaceId === spaceId)
@@ -693,13 +375,13 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     });
     const after = nextItems.filter((i) => feedIds.has(i.feedId)).length;
     set({ items: sortItemsByPublishedDesc(nextItems) });
-    await get().persist();
+    await persistApp();
     await afterDataChange();
     return before - after;
   },
 
   clearAllItems: async () => {
-    const spaceId = getActiveSpaceId();
+    const spaceId = resolveActiveSpaceFromStores();
     const feedIds = new Set(
       get()
         .feeds.filter((f) => f.spaceId === spaceId)
@@ -708,7 +390,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     set({
       items: get().items.filter((i) => !feedIds.has(i.feedId)),
     });
-    await get().persist();
+    await persistApp();
     await afterDataChange();
   },
 
@@ -742,7 +424,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
           : f,
       ),
     });
-    await get().persist();
+    await persistApp();
   },
 
   toggleFeedEnabled: async (feedId) => {
@@ -751,7 +433,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         f.id === feedId ? { ...f, enabled: !f.enabled } : f,
       ),
     });
-    await get().persist();
+    await persistApp();
   },
 
   resumeFeed: async (feedId) => {
@@ -767,7 +449,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
           : f,
       ),
     });
-    await get().persist();
+    await persistApp();
   },
 
   resumeAllPausedFeeds: async () => {
@@ -786,14 +468,14 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         };
       }),
     });
-    await get().persist();
+    await persistApp();
   },
 
   markItemRead: async (itemId, read = true) => {
     set({
       items: get().items.map((i) => (i.id === itemId ? { ...i, read } : i)),
     });
-    await get().persist();
+    await persistApp();
   },
 
   toggleItemStarred: async (itemId) => {
@@ -802,22 +484,15 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         i.id === itemId ? { ...i, starred: !i.starred } : i,
       ),
     });
-    await get().persist();
+    await persistApp();
   },
-
-  setTimelineFilter: (filter) => set({ timelineFilter: filter }),
-  setTimelinePeriod: (period) => set({ timelinePeriod: period }),
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  setSelectedTagId: (tagId) => set({ selectedTagId: tagId }),
-  setSelectedFolderId: (folderId) => set({ selectedFolderId: folderId }),
-  setSelectedFeedIds: (feedIds) => set({ selectedFeedIds: feedIds }),
 
   addFeed: async (input) => {
     const validated = validateFeedUrl(input.url, feedUrlOptions());
-    if (!validated.ok) return "invalid";
+    if (!validated.ok) return 'invalid';
 
     const href = validated.url.href;
-    const spaceId = getActiveSpaceId();
+    const spaceId = resolveActiveSpaceFromStores();
     const folder = get().folders.find((f) => f.id === input.folderId);
     const feedSpaceId = folder?.spaceId ?? spaceId;
 
@@ -825,18 +500,18 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       (f) => f.url === href && f.spaceId === feedSpaceId,
     );
     if (existing) {
-      if (feedInFolder(existing, input.folderId)) return "duplicate";
+      if (feedInFolder(existing, input.folderId)) return 'duplicate';
       set({
         feeds: get().feeds.map((f) =>
           f.id === existing.id ? addFeedToFolder(f, input.folderId) : f,
         ),
       });
-      await get().persist();
-      return "ok";
+      await persistApp();
+      return 'ok';
     }
 
     const feed: FeedSource = {
-      id: createId("feed"),
+      id: createId('feed'),
       title: input.title.trim() || input.url,
       url: href,
       siteUrl: input.siteUrl,
@@ -847,8 +522,8 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       enabled: true,
     };
     set({ feeds: [...get().feeds, feed] });
-    await get().persist();
-    return "ok";
+    await persistApp();
+    return 'ok';
   },
 
   removeFeed: async (feedId) => {
@@ -856,21 +531,21 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       feeds: get().feeds.filter((f) => f.id !== feedId),
       items: get().items.filter((i) => i.feedId !== feedId),
     });
-    await get().persist();
+    await persistApp();
   },
 
   addFolder: async (name) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const spaceId = getActiveSpaceId();
+    const spaceId = resolveActiveSpaceFromStores();
     const folder: Folder = {
-      id: createId("folder"),
+      id: createId('folder'),
       name: trimmed,
       spaceId,
       sortOrder: get().folders.filter((f) => f.spaceId === spaceId).length,
     };
     set({ folders: [...get().folders, folder] });
-    await get().persist();
+    await persistApp();
   },
 
   renameFolder: async (folderId, name) => {
@@ -881,7 +556,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         f.id === folderId ? { ...f, name: trimmed } : f,
       ),
     });
-    await get().persist();
+    await persistApp();
   },
 
   removeFolder: async (folderId) => {
@@ -902,7 +577,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         return addFeedToFolder(f, inboxId);
       }),
     });
-    await get().persist();
+    await persistApp();
   },
 
   updateFolderRetention: async (folderId, retentionDays) => {
@@ -919,7 +594,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
           : f,
       ),
     });
-    await get().persist();
+    await persistApp();
   },
 
   toggleFeedFolder: async (feedId, folderId) => {
@@ -932,22 +607,22 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     set({
       feeds: get().feeds.map((f) => (f.id === feedId ? next : f)),
     });
-    await get().persist();
+    await persistApp();
     return true;
   },
 
   addTag: async (name, color) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const spaceId = getActiveSpaceId();
+    const spaceId = resolveActiveSpaceFromStores();
     const tag: Tag = {
-      id: createId("tag"),
+      id: createId('tag'),
       name: trimmed,
       spaceId,
       color,
     };
     set({ tags: [...get().tags, tag] });
-    await get().persist();
+    await persistApp();
   },
 
   renameTag: async (tagId, name) => {
@@ -958,7 +633,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         t.id === tagId ? { ...t, name: trimmed } : t,
       ),
     });
-    await get().persist();
+    await persistApp();
   },
 
   removeTag: async (tagId) => {
@@ -969,7 +644,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         tagIds: f.tagIds.filter((id) => id !== tagId),
       })),
     });
-    await get().persist();
+    await persistApp();
   },
 
   assignTagsToFeed: async (feedId, tagIds) => {
@@ -986,7 +661,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         f.id === feedId ? { ...f, tagIds: nextTagIds } : f,
       ),
     });
-    await get().persist();
+    await persistApp();
   },
 
   importOpmlFeeds: async (feedInputs, mode) => {
@@ -994,108 +669,26 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     const { valid, skipped } = filterValidFeedInputs(capped, feedUrlOptions());
     if (valid.length === 0) return { added: 0, skipped };
 
-    const spaceId = getActiveSpaceId();
-
-    if (mode === "replace") {
-      const folderNames = [
-        ...new Set(valid.map((f) => f.folderName ?? "Inbox").filter(Boolean)),
-      ];
-      const otherFolders = get().folders.filter((f) => f.spaceId !== spaceId);
-      const otherFeeds = get().feeds.filter((f) => f.spaceId !== spaceId);
-      const otherFeedIds = new Set(otherFeeds.map((f) => f.id));
-      const folders: Folder[] = ensureInboxFolder(
-        folderNames.map((name, index) => ({
-          id: `${spaceId}-${slugifyFolder(name) || createId("folder")}`,
-          name,
-          spaceId,
-          sortOrder: index,
-        })),
-        spaceId,
-      );
-      const folderIdByName = new Map(folders.map((f) => [f.name, f.id]));
-      const inboxId = inboxFolderId(spaceId);
-      const feeds: FeedSource[] = valid.map((input) => ({
-        id: createId("feed"),
-        title: input.title,
-        url: input.url,
-        siteUrl: input.siteUrl,
-        spaceId,
-        folderIds: normalizeFeedFolderIds(
-          [
-            folderIdByName.get(input.folderName ?? "Inbox") ??
-              folders[0]?.id ??
-              inboxId,
-          ],
-          spaceId,
-        ),
-        tagIds: [],
-        enabled: input.enabled !== false,
-      }));
-      set({
-        folders: [...otherFolders, ...folders],
-        feeds: [...otherFeeds, ...feeds],
-        items: get().items.filter((i) => otherFeedIds.has(i.feedId)),
-        tags: get().tags.filter((t) => t.spaceId !== spaceId),
-      });
-      await get().persist();
-      return { added: feeds.length, skipped };
-    }
-
-    const state = get();
-    let folders = [...state.folders];
-    let feeds = [...state.feeds];
-    const feedsByUrl = new Map(
-      feeds.filter((f) => f.spaceId === spaceId).map((f) => [f.url, f]),
+    const spaceId = resolveActiveSpaceFromStores();
+    const next = applyOpmlImport(
+      {
+        folders: get().folders,
+        feeds: get().feeds,
+        items: get().items,
+        tags: get().tags,
+      },
+      valid,
+      mode,
+      spaceId,
     );
-    const folderIdByName = new Map(
-      folders.filter((f) => f.spaceId === spaceId).map((f) => [f.name, f.id]),
-    );
-    let added = 0;
-
-    for (const input of valid) {
-      const folderName = input.folderName ?? "Inbox";
-      let folderId = folderIdByName.get(folderName);
-      if (!folderId) {
-        const folder: Folder = {
-          id: createId("folder"),
-          name: folderName,
-          spaceId,
-          sortOrder: folders.filter((f) => f.spaceId === spaceId).length,
-        };
-        folders = [...folders, folder];
-        folderId = folder.id;
-        folderIdByName.set(folderName, folderId);
-      }
-
-      const existing = feedsByUrl.get(input.url);
-      if (existing) {
-        if (!feedInFolder(existing, folderId)) {
-          const updated = addFeedToFolder(existing, folderId);
-          feeds = feeds.map((f) => (f.id === existing.id ? updated : f));
-          feedsByUrl.set(input.url, updated);
-          added += 1;
-        }
-        continue;
-      }
-
-      const feed: FeedSource = {
-        id: createId("feed"),
-        title: input.title,
-        url: input.url,
-        siteUrl: input.siteUrl,
-        spaceId,
-        folderIds: normalizeFeedFolderIds([folderId], spaceId),
-        tagIds: [],
-        enabled: input.enabled !== false,
-      };
-      feeds.push(feed);
-      feedsByUrl.set(input.url, feed);
-      added += 1;
-    }
-
-    set({ folders, feeds });
-    await get().persist();
-    return { added, skipped };
+    set({
+      folders: next.folders,
+      feeds: next.feeds,
+      items: next.items,
+      tags: next.tags,
+    });
+    await persistApp();
+    return { added: next.added, skipped };
   },
 
   replaceAll: async (payload) => {
@@ -1106,7 +699,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       folders: payload.folders,
       tags: payload.tags,
     });
-    await get().persist();
+    await persistApp();
   },
 }));
 

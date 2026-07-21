@@ -81,8 +81,13 @@ function normalizeEntry(entry: {
   imageUrl?: string;
   publishedAt: string;
 }): RawFeedEntry {
-  const imageUrl = entry.imageUrl ? sanitizeImageUrl(entry.imageUrl) : undefined;
-  const title = cleanFeedText(entry.title || 'Sem título', PARSE_LIMITS.maxTitle);
+  const imageUrl = entry.imageUrl
+    ? sanitizeImageUrl(entry.imageUrl)
+    : undefined;
+  const title = cleanFeedText(
+    entry.title || 'Sem título',
+    PARSE_LIMITS.maxTitle,
+  );
   const summary = entry.summary
     ? cleanFeedText(entry.summary, PARSE_LIMITS.maxSummary)
     : undefined;
@@ -91,7 +96,7 @@ function normalizeEntry(entry: {
     title: title || 'Sem título',
     link: clamp(
       sanitizeItemLink(entry.link || entry.guid),
-      PARSE_LIMITS.maxLink
+      PARSE_LIMITS.maxLink,
     ),
     summary: summary || undefined,
     imageUrl,
@@ -108,8 +113,12 @@ function sanitizeItemLink(raw: string): string {
   return unwrapEmbeddedHttpUrl(raw.trim());
 }
 
-function extractImageUrl(entry: Record<string, unknown>, htmlRaw?: string): string | undefined {
-  const media = entry['media:thumbnail'] ?? entry.mediaThumbnail ?? entry.thumbnail;
+function extractImageUrl(
+  entry: Record<string, unknown>,
+  htmlRaw?: string,
+): string | undefined {
+  const media =
+    entry['media:thumbnail'] ?? entry.mediaThumbnail ?? entry.thumbnail;
   const mediaItems = asArray(media);
   for (const item of mediaItems) {
     if (typeof item === 'object' && item !== null) {
@@ -141,7 +150,8 @@ function extractImageUrl(entry: Record<string, unknown>, htmlRaw?: string): stri
 function parseAtomEntries(xml: string): RawFeedEntry[] {
   const parser = new XMLParser(XML_PARSER_OPTIONS);
   const doc = parser.parse(xml) as Record<string, unknown>;
-  const feed = (doc.feed ?? doc['atom:feed']) as Record<string, unknown> | undefined;
+  const feed = (doc.feed ?? doc['atom:feed']) as
+    Record<string, unknown> | undefined;
   if (!feed) return [];
 
   return asArray(feed.entry)
@@ -185,7 +195,7 @@ function parseRssItems(xml: string): RawFeedEntry[] {
         textValue(i['content:encoded']) ||
         textValue(i.summary);
       const publishedAt = parsePublishedAt(
-        i.pubDate ?? i.published ?? i.updated ?? i['dc:date'] ?? i.date
+        i.pubDate ?? i.published ?? i.updated ?? i['dc:date'] ?? i.date,
       );
       if (!publishedAt) return null;
       const imageUrl = extractImageUrl(i, summaryRaw);
@@ -208,7 +218,8 @@ function parseRssItems(xml: string): RawFeedEntry[] {
 function parseRdfItems(xml: string): RawFeedEntry[] {
   const parser = new XMLParser(XML_PARSER_OPTIONS);
   const doc = parser.parse(xml) as Record<string, unknown>;
-  const rdf = (doc.RDF ?? doc['rdf:RDF']) as Record<string, unknown> | undefined;
+  const rdf = (doc.RDF ?? doc['rdf:RDF']) as
+    Record<string, unknown> | undefined;
   if (!rdf) return [];
 
   return asArray(rdf.item)
@@ -227,11 +238,7 @@ function parseRdfItems(xml: string): RawFeedEntry[] {
         textValue(i.content) ||
         textValue(i.summary);
       const publishedAt = parsePublishedAt(
-        i['dc:date'] ??
-          i.date ??
-          i.pubDate ??
-          i.published ??
-          i.updated
+        i['dc:date'] ?? i.date ?? i.pubDate ?? i.published ?? i.updated,
       );
       if (!publishedAt) return null;
       const imageUrl = extractImageUrl(i, summaryRaw);
@@ -253,7 +260,8 @@ export function parseFeedXml(xml: string): RawFeedEntry[] {
 
   try {
     let entries: RawFeedEntry[] = [];
-    const looksAtom = /<feed[\s>]/i.test(trimmed) || /<entry[\s>]/i.test(trimmed);
+    const looksAtom =
+      /<feed[\s>]/i.test(trimmed) || /<entry[\s>]/i.test(trimmed);
     const looksRdf =
       /<(?:rdf:)?RDF[\s>]/i.test(trimmed) ||
       /xmlns:rdf=/i.test(trimmed) ||

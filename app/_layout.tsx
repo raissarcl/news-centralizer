@@ -7,6 +7,8 @@ import * as Linking from 'expo-linking';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useSettingsStore } from '@/store/settings';
 import { useFeedsStore } from '@/store/feeds';
+import { hydrateApp } from '@/store/persistApp';
+import { useTimelineUiStore } from '@/store/timelineUi';
 import { useTheme } from '@/theme';
 import { t } from '@/lib/i18n';
 import { ensureNotificationChannel, notifyNewItems } from '@/lib/notifications';
@@ -17,15 +19,13 @@ function handleDeepLink(url: string): void {
   if (path.includes('timeline') || path === '' || path === '/') {
     const filter = parsed.queryParams?.filter;
     if (filter === 'unread') {
-      useFeedsStore.getState().setTimelineFilter('unread');
+      useTimelineUiStore.getState().setTimelineFilter('unread');
     }
   }
 }
 
 export default function RootLayout() {
   const [bootReady, setBootReady] = useState(false);
-  const hydrateSettings = useSettingsStore((s) => s.hydrate);
-  const hydrateFeeds = useFeedsStore((s) => s.hydrate);
   const seedDefaultsIfNeeded = useFeedsStore((s) => s.seedDefaultsIfNeeded);
   const seedGeneralIfNeeded = useFeedsStore((s) => s.seedGeneralIfNeeded);
   const refreshAll = useFeedsStore((s) => s.refreshAll);
@@ -33,8 +33,7 @@ export default function RootLayout() {
   useEffect(() => {
     void (async () => {
       try {
-        await hydrateSettings();
-        await hydrateFeeds();
+        await hydrateApp();
         await seedDefaultsIfNeeded();
         await seedGeneralIfNeeded();
         await ensureNotificationChannel();
@@ -49,19 +48,15 @@ export default function RootLayout() {
         }
       }
     })();
-  }, [
-    hydrateSettings,
-    hydrateFeeds,
-    seedDefaultsIfNeeded,
-    seedGeneralIfNeeded,
-    refreshAll,
-  ]);
+  }, [seedDefaultsIfNeeded, seedGeneralIfNeeded, refreshAll]);
 
   useEffect(() => {
     void Linking.getInitialURL().then((url) => {
       if (url) handleDeepLink(url);
     });
-    const sub = Linking.addEventListener('url', ({ url }) => handleDeepLink(url));
+    const sub = Linking.addEventListener('url', ({ url }) =>
+      handleDeepLink(url),
+    );
     return () => sub.remove();
   }, []);
 
@@ -111,10 +106,7 @@ function ThemedStack() {
           options={{ presentation: 'modal', title: t.settings }}
         />
         <Stack.Screen name="folder/[id]" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="source/[id]"
-          options={{ title: t.sourceDetail }}
-        />
+        <Stack.Screen name="source/[id]" options={{ title: t.sourceDetail }} />
       </Stack>
     </>
   );

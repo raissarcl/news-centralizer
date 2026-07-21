@@ -8,6 +8,21 @@ import { applyRetention } from '../src/lib/rss/fetchFeed';
 import { decodeFeedBody } from '../src/lib/rss/decodeFeedBody';
 import { parseFeedXml } from '../src/lib/rss/parseFeedXml';
 import { cleanFeedText } from '../src/lib/text/cleanFeedText';
+import {
+  applyRefreshOntoCurrent,
+  mergeRefreshResults,
+  refreshStateAfterFetch,
+  REFRESH_FAIL_THRESHOLD,
+} from '../src/lib/feeds/refreshMerge';
+import {
+  addFeedToFolder,
+  feedInFolder,
+  getFeedFolderIds,
+  inboxFolderId,
+  removeFeedFromFolder,
+  toggleFeedFolderMembership,
+} from '../src/lib/feeds/feedFolders';
+import { applyOpmlImport } from '../src/lib/opml/importFeeds';
 import { migrateBlob, mergeEngBlogsIntoBlob } from '../src/store/migrate';
 import type { FeedItem, FeedSource, Folder, PersistedBlob } from '../src/types';
 
@@ -15,7 +30,7 @@ function item(
   id: string,
   feedId: string,
   publishedAt: string,
-  overrides: Partial<FeedItem> = {}
+  overrides: Partial<FeedItem> = {},
 ): FeedItem {
   return {
     id,
@@ -116,7 +131,10 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
 
 // cleanFeedText
 {
-  assert.equal(cleanFeedText('&lt;p&gt;&lt;em&gt;Hello&lt;/em&gt;&lt;/p&gt;'), 'Hello');
+  assert.equal(
+    cleanFeedText('&lt;p&gt;&lt;em&gt;Hello&lt;/em&gt;&lt;/p&gt;'),
+    'Hello',
+  );
   assert.equal(cleanFeedText('<p>World</p>'), 'World');
   assert.equal(cleanFeedText('Plain &amp; simple'), 'Plain & simple');
 }
@@ -124,7 +142,10 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
 // isPublishedAtDisplayable
 {
   assert.equal(isPublishedAtDisplayable(new Date().toISOString()), true);
-  assert.equal(isPublishedAtDisplayable(addDays(new Date(), 2).toISOString()), false);
+  assert.equal(
+    isPublishedAtDisplayable(addDays(new Date(), 2).toISOString()),
+    false,
+  );
 }
 
 // selectVisibleItems hides future-dated items
@@ -258,7 +279,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.equal(entries.length, 1);
   assert.equal(
     entries[0].link,
-    'https://www1.folha.uol.com.br/poder/2026/07/exemplo.shtml'
+    'https://www1.folha.uol.com.br/poder/2026/07/exemplo.shtml',
   );
 }
 
@@ -266,7 +287,10 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
 {
   const xml =
     '<?xml version="1.0" encoding="ISO-8859-1"?><rss><channel><title>São Paulo</title></channel></rss>';
-  const bytes = Uint8Array.from(Buffer.from(xml, 'latin1'));
+  // latin1 bytes without Node Buffer (Expo tsconfig has no @types/node)
+  const bytes = Uint8Array.from(
+    Array.from(xml, (ch) => ch.charCodeAt(0) & 0xff),
+  );
   const text = decodeFeedBody(bytes, 'text/xml');
   assert.match(text, /São Paulo/);
   assert.equal(text.includes('\uFFFD'), false);
@@ -284,7 +308,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     [item('old', 'f1', old), item('new', 'f1', recent)],
     30,
     feeds,
-    folders
+    folders,
   );
   assert.equal(kept.length, 1);
   assert.equal(kept[0].id, 'new');
@@ -328,10 +352,11 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     tags: [],
     settings: {},
   });
-  assert.equal(migrated.schemaVersion, 7);
+  assert.equal(migrated.schemaVersion, 8);
+  assert.equal(migrated.settings.seededGeneral, false);
   assert.equal(
     migrated.folders.find((f) => f.id === 'inbox:computing')?.name,
-    'Caixa de entrada'
+    'Caixa de entrada',
   );
   assert.ok(migrated.folders.some((f) => f.id === 'inbox:general'));
   assert.equal(migrated.settings.activeSpaceId, 'computing');
@@ -409,4 +434,207 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.equal(migrated.items.length, 0);
 }
 
-console.log('All unit tests passed.');
+// applyRefreshOntoCurrent preserves enabled/delete against stale refresh patches
+{
+  const folders: Folder[] = [
+    { id: 'news', name: 'News', spaceId: 'computing', sortOrder: 0 },
+  ];
+  const currentFeeds = [
+    { ...feed('a', 'news'), enabled: false, etag: 'old-a' },
+    { ...feed('b', 'news'), enabled: true, etag: 'old-b' },
+  ];
+  const currentItems = [item('i1', 'a', new Date().toISOString())];
+  const feedUpdates = new Map([
+    [
+      'a',
+      {
+        refreshFailCount: 0,
+        refreshPausedUntil: undefined,
+        favicon: undefined,
+        lastFetchedAt: new Date().toISOString(),
+        etag: 'new-a',
+        lastModified: undefined,
+        lastError: undefined,
+      },
+    ],
+    [
+      'gone',
+      {
+        refreshFailCount: 0,
+        refreshPausedUntil: undefined,
+        favicon: undefined,
+        lastFetchedAt: new Date().toISOString(),
+        etag: 'stale',
+        lastModified: undefined,
+        lastError: undefined,
+      },
+    ],
+  ]);
+  const newItems = [
+    item('i2', 'a', new Date().toISOString()),
+    item('i3', 'gone', new Date().toISOString()),
+  ];
+  const applied = applyRefreshOntoCurrent(
+    currentFeeds,
+    currentItems,
+    feedUpdates,
+    newItems,
+    new Map(),
+    folders,
+    30,
+  );
+  assert.equal(applied.feeds.length, 2);
+  assert.equal(applied.feeds.find((f) => f.id === 'a')?.enabled, false);
+  assert.equal(applied.feeds.find((f) => f.id === 'a')?.etag, 'new-a');
+  assert.ok(!applied.feeds.some((f) => f.id === 'gone'));
+  assert.ok(applied.items.some((i) => i.id === 'i2'));
+  assert.ok(!applied.items.some((i) => i.id === 'i3'));
+}
+
+// refreshStateAfterFetch pauses after threshold failures
+{
+  const f = feed('f1');
+  f.refreshFailCount = REFRESH_FAIL_THRESHOLD - 1;
+  const now = Date.parse('2026-01-01T00:00:00.000Z');
+  const paused = refreshStateAfterFetch(f, 'network', now);
+  assert.equal(paused.refreshFailCount, REFRESH_FAIL_THRESHOLD);
+  assert.ok(paused.refreshPausedUntil);
+  const ok = refreshStateAfterFetch(f, undefined, now);
+  assert.equal(ok.refreshFailCount, 0);
+  assert.equal(ok.refreshPausedUntil, undefined);
+}
+
+// mergeRefreshResults: space-scoped link dedupe + injected fetch
+async function testMergeRefreshResults() {
+  const feeds = [
+    { ...feed('a', 'news'), spaceId: 'computing' },
+    { ...feed('b', 'news'), spaceId: 'general' },
+  ];
+  const existing = [
+    item('old', 'a', '2026-01-01T00:00:00.000Z', {
+      link: 'https://example.com/shared',
+    }),
+  ];
+  const result = await mergeRefreshResults(feeds, feeds, existing, {
+    allowHttp: false,
+    now: Date.parse('2026-01-02T00:00:00.000Z'),
+    fetchFeedFn: async (source) => ({
+      notModified: false,
+      entries: [
+        {
+          id: `${source.id}-new`,
+          title: `From ${source.id}`,
+          link: 'https://example.com/shared',
+          publishedAt: '2026-01-02T00:00:00.000Z',
+        },
+      ],
+    }),
+  });
+  // Same link in computing is a dupe; general may still add it.
+  assert.equal(result.newItems.length, 1);
+  assert.equal(result.newItems[0].feedId, 'b');
+  assert.equal(result.newCountBySpace.general, 1);
+  assert.equal(result.newCountBySpace.computing ?? 0, 0);
+}
+
+// applyOpmlImport merge + replace
+{
+  const spaceId = 'computing';
+  const inboxId = inboxFolderId(spaceId);
+  const state = {
+    folders: [
+      { id: inboxId, name: 'Caixa de entrada', spaceId, sortOrder: -1 },
+    ],
+    feeds: [
+      {
+        ...feed('existing'),
+        url: 'https://example.com/a.xml',
+        folderIds: [inboxId],
+      },
+    ],
+    items: [item('i1', 'existing', new Date().toISOString())],
+    tags: [{ id: 't1', name: 'Tag', spaceId }],
+  };
+  const merged = applyOpmlImport(
+    state,
+    [
+      {
+        title: 'A',
+        url: 'https://example.com/a.xml',
+        folderName: 'News',
+      },
+      {
+        title: 'B',
+        url: 'https://example.com/b.xml',
+        folderName: 'News',
+      },
+    ],
+    'merge',
+    spaceId,
+  );
+  assert.equal(merged.added, 2);
+  assert.ok(merged.folders.some((f) => f.name === 'News'));
+  assert.ok(merged.feeds.some((f) => f.url === 'https://example.com/b.xml'));
+  assert.ok(
+    feedInFolder(
+      merged.feeds.find((f) => f.url === 'https://example.com/a.xml')!,
+      merged.folders.find((f) => f.name === 'News')!.id,
+    ),
+  );
+
+  const replaced = applyOpmlImport(
+    state,
+    [
+      {
+        title: 'Only',
+        url: 'https://example.com/only.xml',
+        folderName: 'Solo',
+      },
+    ],
+    'replace',
+    spaceId,
+  );
+  assert.equal(replaced.added, 1);
+  assert.equal(replaced.feeds.filter((f) => f.spaceId === spaceId).length, 1);
+  assert.equal(replaced.items.length, 0);
+  assert.equal(replaced.tags.length, 0);
+}
+
+// folder membership toggle + inbox fallback on remove
+{
+  const spaceId = 'computing';
+  const inboxId = inboxFolderId(spaceId);
+  const folderId = 'news';
+  let f: FeedSource = {
+    ...feed('f1', [folderId]),
+    spaceId,
+  };
+  assert.ok(feedInFolder(f, folderId));
+  // Cannot leave the last folder — toggle returns null.
+  assert.equal(toggleFeedFolderMembership(f, folderId), null);
+
+  f = addFeedToFolder(f, inboxId);
+  assert.ok(feedInFolder(f, inboxId));
+  const removed = toggleFeedFolderMembership(f, folderId);
+  assert.ok(removed);
+  f = removed!;
+  assert.ok(!feedInFolder(f, folderId));
+  assert.ok(feedInFolder(f, inboxId));
+
+  // Simulate folder delete: strip membership then fall back to inbox.
+  f = { ...feed('f2', [folderId]), spaceId };
+  f = removeFeedFromFolder(f, folderId);
+  if (getFeedFolderIds(f).length === 0) {
+    f = addFeedToFolder(f, inboxId);
+  }
+  assert.ok(feedInFolder(f, inboxId));
+}
+
+void testMergeRefreshResults()
+  .then(() => {
+    console.log('All unit tests passed.');
+  })
+  .catch((err: unknown) => {
+    console.error(err);
+    process.exit(1);
+  });

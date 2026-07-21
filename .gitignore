@@ -40,6 +40,9 @@ src/data/defaultGeneralFeedsOpml.local.ts
 # typescript
 *.tsbuildinfo
 
+# eslint
+.eslintcache
+
 # generated native folders
 /ios
 /android

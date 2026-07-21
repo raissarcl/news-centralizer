@@ -31,7 +31,7 @@ export function SpaceSwitcher() {
   const spaces = useFeedsStore((s) => s.spaces);
   const setActiveSpaceId = useFeedsStore((s) => s.setActiveSpaceId);
   const activeSpaceId = useSettingsStore((s) =>
-    resolveActiveSpaceId(s.settings.activeSpaceId, spaces)
+    resolveActiveSpaceId(s.settings.activeSpaceId, spaces),
   );
 
   const activeSpace =
@@ -65,7 +65,11 @@ export function SpaceSwitcher() {
           },
         ]}
       >
-        <Ionicons name={spaceIconName(activeSpace)} size={16} color={tokens.text} />
+        <Ionicons
+          name={spaceIconName(activeSpace)}
+          size={16}
+          color={tokens.text}
+        />
         <Text
           numberOfLines={1}
           style={[styles.triggerLabel, { color: tokens.text }]}

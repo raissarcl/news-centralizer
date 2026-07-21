@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const { withAndroidManifest, withDangerousMod, createRunOncePlugin } = require('@expo/config-plugins');
+const {
+  withAndroidManifest,
+  withDangerousMod,
+  createRunOncePlugin,
+} = require('@expo/config-plugins');
 
 const NETWORK_CONFIG = `<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
@@ -32,13 +36,13 @@ function withCopyNetworkConfig(config) {
         'src',
         'main',
         'res',
-        'xml'
+        'xml',
       );
       if (!fs.existsSync(xmlDir)) fs.mkdirSync(xmlDir, { recursive: true });
       fs.writeFileSync(
         path.join(xmlDir, 'network_security_config.xml'),
         NETWORK_CONFIG,
-        'utf8'
+        'utf8',
       );
       return cfg;
     },
@@ -52,5 +56,5 @@ module.exports = createRunOncePlugin(
     return config;
   },
   'withNewsCentralizerNetworkSecurity',
-  '1.0.0'
+  '1.0.0',
 );

@@ -22,7 +22,7 @@ export async function ensureNotificationChannel(): Promise<void> {
 
 export async function notifyNewItems(
   count: number,
-  headlines: string[] = []
+  headlines: string[] = [],
 ): Promise<void> {
   if (count <= 0) return;
   await ensureNotificationChannel();

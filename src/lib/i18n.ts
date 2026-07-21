@@ -44,15 +44,14 @@ export const t = {
   settingsSectionOrganization: 'Organização',
   settingsSectionData: 'Backup e importação',
   settingsSectionAdvanced: 'Avançado',
-  foldersHint:
-    'Crie pastas para agrupar feeds. Veja e navegue na aba Pastas.',
-  tagsHint:
-    'Filtre na Timeline. Atribua tags em Fontes → detalhe do feed.',
+  foldersHint: 'Crie pastas para agrupar feeds. Veja e navegue na aba Pastas.',
+  tagsHint: 'Filtre na Timeline. Atribua tags em Fontes → detalhe do feed.',
   backupJsonHint:
     'Cópia completa: feeds, itens lidos, pastas, tags e configurações.',
   backupJson: 'Backup JSON',
   opmlHint: 'Só lista de feeds — compatível com outros leitores RSS.',
-  mergeOpmlHint: 'Adiciona feeds do arquivo ao espaço ativo; mantém os que já existem.',
+  mergeOpmlHint:
+    'Adiciona feeds do arquivo ao espaço ativo; mantém os que já existem.',
   replaceOpmlHint:
     'Apaga os feeds do espaço ativo e importa só os do arquivo. O outro espaço permanece.',
   allowHttpFeedsHint:
@@ -94,7 +93,8 @@ export const t = {
   refreshFeed: 'Atualizar',
   moveToFolder: 'Pastas do feed',
   feedFolders: 'Pastas do feed',
-  feedFoldersHint: 'Toque para incluir ou remover pastas. O feed precisa ficar em pelo menos uma.',
+  feedFoldersHint:
+    'Toque para incluir ou remover pastas. O feed precisa ficar em pelo menos uma.',
   feedMustStayInFolder: 'O feed precisa estar em pelo menos uma pasta.',
   useRssHub: 'Sugerir URL RSSHub',
   rssHubHint: 'Substack: {site}/feed · Sem RSS: https://rsshub.app/...',
@@ -112,12 +112,16 @@ export const t = {
     'O RSSHub (rsshub.app) busca o conteúdo por você. A instância vê a rota solicitada e seu IP.',
   rssHubBadge: 'RSSHub',
   opmlImportSkipped: (n: number) =>
-    n === 1 ? '1 feed ignorado (URL inválida)' : `${n} feeds ignorados (URL inválida)`,
+    n === 1
+      ? '1 feed ignorado (URL inválida)'
+      : `${n} feeds ignorados (URL inválida)`,
   feedPaused: 'Refresh pausado após falhas repetidas',
   feedHealthSummary: (errors: number, paused: number) => {
     const parts: string[] = [];
-    if (errors > 0) parts.push(errors === 1 ? '1 com erro' : `${errors} com erro`);
-    if (paused > 0) parts.push(paused === 1 ? '1 pausado' : `${paused} pausados`);
+    if (errors > 0)
+      parts.push(errors === 1 ? '1 com erro' : `${errors} com erro`);
+    if (paused > 0)
+      parts.push(paused === 1 ? '1 pausado' : `${paused} pausados`);
     return parts.join(' · ');
   },
   resumePausedFeeds: 'Retomar pausados',
@@ -147,12 +151,12 @@ export const t = {
   filterByFolder: 'Pasta',
   renameFolder: 'Renomear pasta',
   deleteFolder: 'Excluir pasta',
-  deleteFolderConfirm: 'Os feeds deixam de aparecer nesta pasta, mas permanecem nas outras.',
+  deleteFolderConfirm:
+    'Os feeds deixam de aparecer nesta pasta, mas permanecem nas outras.',
   folderFeeds: 'Feeds nesta pasta',
   manageFolderFeeds: 'Gerenciar feeds',
   folderSettings: 'Configurações da pasta',
-  folderFeedsHint:
-    'Nesta pasta: inclui o feed na organização desta pasta.',
+  folderFeedsHint: 'Nesta pasta: inclui o feed na organização desta pasta.',
   feedsCount: (n: number) => (n === 1 ? '1 feed' : `${n} feeds`),
   inboxCannotRename: 'A pasta Inbox não pode ser renomeada ou excluída.',
   moveFeedToFolder: 'Mover para pasta',

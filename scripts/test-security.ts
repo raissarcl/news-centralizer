@@ -13,7 +13,7 @@ function testUrls() {
   assert.equal(validateFeedUrl('http://example.com/feed').ok, false);
   assert.equal(
     validateFeedUrl('http://example.com/feed', { allowHttp: true }).ok,
-    true
+    true,
   );
   assert.equal(validateFeedUrl('file:///etc/passwd').ok, false);
   assert.equal(validateFeedUrl('javascript:alert(1)').ok, false);
@@ -32,13 +32,13 @@ function testUrls() {
 
   assert.equal(
     unwrapEmbeddedHttpUrl(
-      'https://redir.folha.com.br/redir/online/poder/rss091/*https://www1.folha.uol.com.br/poder/a.shtml'
+      'https://redir.folha.com.br/redir/online/poder/rss091/*https://www1.folha.uol.com.br/poder/a.shtml',
     ),
-    'https://www1.folha.uol.com.br/poder/a.shtml'
+    'https://www1.folha.uol.com.br/poder/a.shtml',
   );
   assert.equal(
     unwrapEmbeddedHttpUrl('https://example.com/plain'),
-    'https://example.com/plain'
+    'https://example.com/plain',
   );
 }
 
@@ -52,16 +52,19 @@ function testImportFilter() {
 }
 
 function testParseLimits() {
-  const items = Array.from({ length: PARSE_LIMITS.maxEntries + 10 }, (_, i) => ({
-    title: `Item ${i}`,
-    link: `https://example.com/${i}`,
-    guid: `g${i}`,
-    pubDate: 'Mon, 01 Jan 2024 00:00:00 GMT',
-  }));
+  const items = Array.from(
+    { length: PARSE_LIMITS.maxEntries + 10 },
+    (_, i) => ({
+      title: `Item ${i}`,
+      link: `https://example.com/${i}`,
+      guid: `g${i}`,
+      pubDate: 'Mon, 01 Jan 2024 00:00:00 GMT',
+    }),
+  );
   const xml = `<?xml version="1.0"?><rss><channel>${items
     .map(
       (i) =>
-        `<item><title>${i.title}</title><link>${i.link}</link><guid>${i.guid}</guid><pubDate>${i.pubDate}</pubDate></item>`
+        `<item><title>${i.title}</title><link>${i.link}</link><guid>${i.guid}</guid><pubDate>${i.pubDate}</pubDate></item>`,
     )
     .join('')}</channel></rss>`;
   const parsed = parseFeedXml(xml);

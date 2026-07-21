@@ -62,7 +62,7 @@ export function parseOpml(xml: string): OpmlOutline[] {
 
 export function flattenOpmlFeeds(
   outlines: OpmlOutline[],
-  folderName?: string
+  folderName?: string,
 ): OpmlFeedInput[] {
   const feeds: OpmlFeedInput[] = [];
   for (const outline of outlines) {
@@ -78,7 +78,7 @@ export function flattenOpmlFeeds(
     }
     if (outline.children?.length) {
       feeds.push(
-        ...flattenOpmlFeeds(outline.children, outline.title || folderName)
+        ...flattenOpmlFeeds(outline.children, outline.title || folderName),
       );
     }
   }
@@ -87,14 +87,14 @@ export function flattenOpmlFeeds(
 
 export function serializeOpml(
   title: string,
-  folders: Array<{ name: string; feeds: OpmlFeedInput[] }>
+  folders: { name: string; feeds: OpmlFeedInput[] }[],
 ): string {
   const folderXml = folders
     .map((folder) => {
       const feedXml = folder.feeds
         .map(
           (feed) =>
-            `      <outline type="rss" text="${escapeXml(feed.title)}" title="${escapeXml(feed.title)}" xmlUrl="${escapeXml(feed.url)}" htmlUrl="${escapeXml(feed.siteUrl ?? feed.url)}" />`
+            `      <outline type="rss" text="${escapeXml(feed.title)}" title="${escapeXml(feed.title)}" xmlUrl="${escapeXml(feed.url)}" htmlUrl="${escapeXml(feed.siteUrl ?? feed.url)}" />`,
         )
         .join('\n');
       return `    <outline text="${escapeXml(folder.name)}" title="${escapeXml(folder.name)}">\n${feedXml}\n    </outline>`;

@@ -1,4 +1,7 @@
-export function faviconUrlForFeed(siteUrl?: string, feedUrl?: string): string | undefined {
+export function faviconUrlForFeed(
+  siteUrl?: string,
+  feedUrl?: string,
+): string | undefined {
   try {
     const raw = siteUrl ?? feedUrl;
     if (!raw) return undefined;

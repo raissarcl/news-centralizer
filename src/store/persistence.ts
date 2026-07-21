@@ -1,5 +1,5 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getDefaultSpaces } from "../lib/spaces";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getDefaultSpaces } from '../lib/spaces';
 import {
   CURRENT_SCHEMA_VERSION,
   type FeedItem,
@@ -9,10 +9,10 @@ import {
   type Settings,
   type Space,
   type Tag,
-} from "../types";
-import { migrateBlob } from "./migrate";
+} from '../types';
+import { migrateBlob } from './migrate';
 
-export const STORAGE_KEY = "news-centralizer:v1";
+export const STORAGE_KEY = 'news-centralizer:v1';
 
 export async function loadBlob(): Promise<PersistedBlob> {
   try {
@@ -22,7 +22,7 @@ export async function loadBlob(): Promise<PersistedBlob> {
     }
     const parsed = JSON.parse(raw) as Partial<PersistedBlob>;
     const storedVersion =
-      typeof parsed.schemaVersion === "number" ? parsed.schemaVersion : 0;
+      typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 0;
     const migrated = migrateBlob(parsed);
     if (migrated.schemaVersion > storedVersion) {
       await saveBlob(migrated);

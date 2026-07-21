@@ -63,7 +63,7 @@ export function ensureDefaultSpaces(spaces: Space[] | undefined): Space[] {
 
 export function resolveActiveSpaceId(
   activeSpaceId: string | undefined,
-  spaces: Space[]
+  spaces: Space[],
 ): string {
   if (isGeneralOnly()) {
     return GENERAL_SPACE_ID;

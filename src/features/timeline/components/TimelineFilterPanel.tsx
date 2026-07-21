@@ -1,4 +1,11 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { periodLabel } from '@/lib/feeds/filterLabels';
 import { useTheme } from '@/theme';
@@ -55,14 +62,24 @@ export function TimelineFilterPanel({
     selectedFeedIds.length > 0;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable
-          style={[styles.card, { backgroundColor: tokens.surface, borderColor: tokens.border }]}
+          style={[
+            styles.card,
+            { backgroundColor: tokens.surface, borderColor: tokens.border },
+          ]}
           onPress={(e) => e.stopPropagation()}
         >
           <View style={styles.header}>
-            <Text style={[styles.title, { color: tokens.text }]}>{t.timelineFilters}</Text>
+            <Text style={[styles.title, { color: tokens.text }]}>
+              {t.timelineFilters}
+            </Text>
             <Pressable onPress={onClose} hitSlop={12}>
               <Ionicons name="close" size={22} color={tokens.textMuted} />
             </Pressable>
@@ -82,7 +99,9 @@ export function TimelineFilterPanel({
                     style={[
                       styles.chip,
                       {
-                        backgroundColor: active ? tokens.primary : tokens.surfaceAlt,
+                        backgroundColor: active
+                          ? tokens.primary
+                          : tokens.surfaceAlt,
                         borderColor: tokens.border,
                       },
                     ]}
@@ -102,7 +121,9 @@ export function TimelineFilterPanel({
 
             {sortedFolders.length > 0 && !hideFolderSection ? (
               <>
-                <Text style={[styles.sectionLabel, { color: tokens.textMuted }]}>
+                <Text
+                  style={[styles.sectionLabel, { color: tokens.textMuted }]}
+                >
                   {t.filterFolder}
                 </Text>
                 <View style={styles.chipRow}>
@@ -111,14 +132,18 @@ export function TimelineFilterPanel({
                     style={[
                       styles.chip,
                       {
-                        backgroundColor: !selectedFolderId ? tokens.primary : tokens.surfaceAlt,
+                        backgroundColor: !selectedFolderId
+                          ? tokens.primary
+                          : tokens.surfaceAlt,
                         borderColor: tokens.border,
                       },
                     ]}
                   >
                     <Text
                       style={{
-                        color: !selectedFolderId ? tokens.primaryText : tokens.textMuted,
+                        color: !selectedFolderId
+                          ? tokens.primaryText
+                          : tokens.textMuted,
                         fontSize: 13,
                       }}
                     >
@@ -130,18 +155,24 @@ export function TimelineFilterPanel({
                     return (
                       <Pressable
                         key={folder.id}
-                        onPress={() => onFolderChange(active ? null : folder.id)}
+                        onPress={() =>
+                          onFolderChange(active ? null : folder.id)
+                        }
                         style={[
                           styles.chip,
                           {
-                            backgroundColor: active ? tokens.primary : tokens.surfaceAlt,
+                            backgroundColor: active
+                              ? tokens.primary
+                              : tokens.surfaceAlt,
                             borderColor: tokens.border,
                           },
                         ]}
                       >
                         <Text
                           style={{
-                            color: active ? tokens.primaryText : tokens.textMuted,
+                            color: active
+                              ? tokens.primaryText
+                              : tokens.textMuted,
                             fontSize: 13,
                           }}
                         >
@@ -156,7 +187,9 @@ export function TimelineFilterPanel({
 
             {sortedFeeds.length > 0 ? (
               <>
-                <Text style={[styles.sectionLabel, { color: tokens.textMuted }]}>
+                <Text
+                  style={[styles.sectionLabel, { color: tokens.textMuted }]}
+                >
                   {t.filterFeed}
                 </Text>
                 <View style={styles.chipRow}>
@@ -165,14 +198,20 @@ export function TimelineFilterPanel({
                     style={[
                       styles.chip,
                       {
-                        backgroundColor: selectedFeedIds.length === 0 ? tokens.primary : tokens.surfaceAlt,
+                        backgroundColor:
+                          selectedFeedIds.length === 0
+                            ? tokens.primary
+                            : tokens.surfaceAlt,
                         borderColor: tokens.border,
                       },
                     ]}
                   >
                     <Text
                       style={{
-                        color: selectedFeedIds.length === 0 ? tokens.primaryText : tokens.textMuted,
+                        color:
+                          selectedFeedIds.length === 0
+                            ? tokens.primaryText
+                            : tokens.textMuted,
                         fontSize: 13,
                       }}
                     >
@@ -188,20 +227,24 @@ export function TimelineFilterPanel({
                           onFeedChange(
                             active
                               ? selectedFeedIds.filter((id) => id !== feed.id)
-                              : [...selectedFeedIds, feed.id]
+                              : [...selectedFeedIds, feed.id],
                           )
                         }
                         style={[
                           styles.chip,
                           {
-                            backgroundColor: active ? tokens.primary : tokens.surfaceAlt,
+                            backgroundColor: active
+                              ? tokens.primary
+                              : tokens.surfaceAlt,
                             borderColor: tokens.border,
                           },
                         ]}
                       >
                         <Text
                           style={{
-                            color: active ? tokens.primaryText : tokens.textMuted,
+                            color: active
+                              ? tokens.primaryText
+                              : tokens.textMuted,
                             fontSize: 13,
                           }}
                           numberOfLines={1}
@@ -217,7 +260,9 @@ export function TimelineFilterPanel({
 
             {tags.length > 0 ? (
               <>
-                <Text style={[styles.sectionLabel, { color: tokens.textMuted }]}>
+                <Text
+                  style={[styles.sectionLabel, { color: tokens.textMuted }]}
+                >
                   {t.filterTag}
                 </Text>
                 <View style={styles.chipRow}>
@@ -226,14 +271,18 @@ export function TimelineFilterPanel({
                     style={[
                       styles.chip,
                       {
-                        backgroundColor: !selectedTagId ? tokens.primary : tokens.surfaceAlt,
+                        backgroundColor: !selectedTagId
+                          ? tokens.primary
+                          : tokens.surfaceAlt,
                         borderColor: tokens.border,
                       },
                     ]}
                   >
                     <Text
                       style={{
-                        color: !selectedTagId ? tokens.primaryText : tokens.textMuted,
+                        color: !selectedTagId
+                          ? tokens.primaryText
+                          : tokens.textMuted,
                         fontSize: 13,
                       }}
                     >
@@ -249,14 +298,18 @@ export function TimelineFilterPanel({
                         style={[
                           styles.chip,
                           {
-                            backgroundColor: active ? tokens.primary : tokens.surfaceAlt,
+                            backgroundColor: active
+                              ? tokens.primary
+                              : tokens.surfaceAlt,
                             borderColor: tokens.border,
                           },
                         ]}
                       >
                         <Text
                           style={{
-                            color: active ? tokens.primaryText : tokens.textMuted,
+                            color: active
+                              ? tokens.primaryText
+                              : tokens.textMuted,
                             fontSize: 13,
                           }}
                         >
@@ -273,14 +326,18 @@ export function TimelineFilterPanel({
           <View style={styles.footer}>
             {hasSecondary ? (
               <Pressable onPress={onClearSecondary}>
-                <Text style={{ color: tokens.danger, fontSize: 14 }}>{t.clearFilters}</Text>
+                <Text style={{ color: tokens.danger, fontSize: 14 }}>
+                  {t.clearFilters}
+                </Text>
               </Pressable>
             ) : null}
             <Pressable
               onPress={onClose}
               style={[styles.doneBtn, { backgroundColor: tokens.primary }]}
             >
-              <Text style={{ color: tokens.primaryText, fontWeight: '600' }}>{t.done}</Text>
+              <Text style={{ color: tokens.primaryText, fontWeight: '600' }}>
+                {t.done}
+              </Text>
             </Pressable>
           </View>
         </Pressable>

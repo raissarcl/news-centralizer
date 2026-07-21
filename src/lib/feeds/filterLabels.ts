@@ -15,7 +15,7 @@ export function buildActiveFilterSummary(input: {
   selectedFolderId?: string | null;
   selectedTagId?: string | null;
   selectedFeedIds?: string[];
-  folders?: Array<{ id: string; name: string }>;
+  folders?: { id: string; name: string }[];
   tags?: Tag[];
   feeds?: FeedSource[];
 }): string {

@@ -1,4 +1,11 @@
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme';
 import { t } from '@/lib/i18n';
@@ -60,7 +67,11 @@ export function FeedItemListToolbar({
           />
           {searchQuery ? (
             <Pressable onPress={() => onSearchChange('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={18} color={tokens.textFaint} />
+              <Ionicons
+                name="close-circle"
+                size={18}
+                color={tokens.textFaint}
+              />
             </Pressable>
           ) : null}
         </View>
@@ -71,7 +82,9 @@ export function FeedItemListToolbar({
           style={[
             styles.filterBtn,
             {
-              backgroundColor: hasSecondaryFilters ? tokens.primary : tokens.surfaceAlt,
+              backgroundColor: hasSecondaryFilters
+                ? tokens.primary
+                : tokens.surfaceAlt,
               borderColor: tokens.border,
             },
           ]}
@@ -123,9 +136,15 @@ export function FeedItemListToolbar({
       {hasSecondaryFilters ? (
         <Pressable
           onPress={onClearSecondary}
-          style={[styles.activeBanner, { backgroundColor: tokens.surfaceAlt, borderColor: tokens.border }]}
+          style={[
+            styles.activeBanner,
+            { backgroundColor: tokens.surfaceAlt, borderColor: tokens.border },
+          ]}
         >
-          <Text style={{ color: tokens.textMuted, fontSize: 13, flex: 1 }} numberOfLines={1}>
+          <Text
+            style={{ color: tokens.textMuted, fontSize: 13, flex: 1 }}
+            numberOfLines={1}
+          >
             {activeFilterSummary}
           </Text>
           <Ionicons name="close-circle" size={18} color={tokens.textFaint} />

@@ -3,7 +3,6 @@ import type { FeedSource, FeedItem } from '@/types';
 import { itemIdFromEntry } from '@/lib/id';
 import { retentionDaysForFeed } from '@/lib/feeds/feedFolders';
 import { safeFetch } from '@/lib/security/safeFetch';
-import { useSettingsStore } from '@/store/settings';
 import { isPublishedAtDisplayable } from '@/lib/items/publishDate';
 import { parseFeedXml } from './parseFeedXml';
 
@@ -24,8 +23,15 @@ export type FetchFeedResult = {
   error?: string;
 };
 
-export async function fetchFeed(source: FeedSource): Promise<FetchFeedResult> {
-  const allowHttp = useSettingsStore.getState().settings.allowHttpFeeds;
+export type FetchFeedOptions = {
+  allowHttp?: boolean;
+};
+
+export async function fetchFeed(
+  source: FeedSource,
+  options: FetchFeedOptions = {},
+): Promise<FetchFeedResult> {
+  const allowHttp = options.allowHttp === true;
   const headers: Record<string, string> = {
     Accept:
       'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
@@ -81,7 +87,7 @@ export function applyRetention(
   items: FeedItem[],
   retentionDays: number,
   feeds: FeedSource[],
-  folders: Array<{ id: string; retentionDays?: number }>
+  folders: { id: string; retentionDays?: number }[],
 ): FeedItem[] {
   const feedById = new Map(feeds.map((f) => [f.id, f]));
 
@@ -104,7 +110,7 @@ export const REFRESH_CONCURRENCY = 8;
 export async function mapPool<T, R>(
   items: T[],
   limit: number,
-  fn: (item: T) => Promise<R>
+  fn: (item: T) => Promise<R>,
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let index = 0;
@@ -117,7 +123,7 @@ export async function mapPool<T, R>(
   }
 
   const workers = Array.from({ length: Math.min(limit, items.length) }, () =>
-    worker()
+    worker(),
   );
   await Promise.all(workers);
   return results;

@@ -31,4 +31,6 @@ const body = opml.endsWith('\n') ? opml : `${opml}\n`;
 const ts = `export const DEFAULT_GENERAL_FEEDS_OPML = \`${body}\`;\n`;
 
 fs.writeFileSync(tsPath, ts, 'utf8');
-console.log(`Wrote ${path.relative(root, tsPath)} from ${path.relative(root, opmlPath)}`);
+console.log(
+  `Wrote ${path.relative(root, tsPath)} from ${path.relative(root, opmlPath)}`,
+);

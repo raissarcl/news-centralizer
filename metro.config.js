@@ -7,7 +7,7 @@ const config = getDefaultConfig(__dirname);
 
 const localGeneralFeedsOpml = path.resolve(
   __dirname,
-  'src/data/defaultGeneralFeedsOpml.local.ts'
+  'src/data/defaultGeneralFeedsOpml.local.ts',
 );
 
 const defaultResolveRequest = config.resolver.resolveRequest;

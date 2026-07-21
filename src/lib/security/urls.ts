@@ -7,8 +7,7 @@ export type UrlValidationError =
   | 'empty_host';
 
 export type UrlValidationResult =
-  | { ok: true; url: URL }
-  | { ok: false; error: UrlValidationError };
+  { ok: true; url: URL } | { ok: false; error: UrlValidationError };
 
 export type FeedUrlOptions = {
   allowHttp?: boolean;
@@ -75,11 +74,14 @@ export function isPrivateHost(hostname: string): boolean {
 
 function baseValidate(
   raw: string,
-  allowedSchemes: Set<string>
+  allowedSchemes: Set<string>,
 ): UrlValidationResult {
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > MAX_URL_LENGTH) {
-    return { ok: false, error: trimmed.length > MAX_URL_LENGTH ? 'too_long' : 'malformed' };
+    return {
+      ok: false,
+      error: trimmed.length > MAX_URL_LENGTH ? 'too_long' : 'malformed',
+    };
   }
 
   let parsed: URL;
@@ -112,7 +114,7 @@ function baseValidate(
 
 export function validateFeedUrl(
   raw: string,
-  options: FeedUrlOptions = {}
+  options: FeedUrlOptions = {},
 ): UrlValidationResult {
   const schemes = new Set(['https:']);
   if (options.allowHttp) schemes.add('http:');
@@ -121,7 +123,7 @@ export function validateFeedUrl(
 
 export function validateItemLink(
   raw: string,
-  options: ItemLinkOptions = { allowHttp: true }
+  options: ItemLinkOptions = { allowHttp: true },
 ): UrlValidationResult {
   const schemes = new Set<string>(['https:']);
   if (options.allowHttp !== false) schemes.add('http:');
