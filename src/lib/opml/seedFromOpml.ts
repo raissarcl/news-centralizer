@@ -1,6 +1,10 @@
 import { faviconUrlForFeed } from '../favicon';
-import { inboxFolderId, normalizeFeedFolderIds } from '../feeds/feedFolders';
+import {
+  inboxFolderId,
+  normalizeFeedFolderIds,
+} from '../feeds/feedFolders';
 import { createId } from '../id';
+import { normalizeFeedUrl } from '../items/dedupeItems';
 import { validateFeedUrl } from '../security/urls';
 import type { FeedSource, Folder } from '../../types';
 import { flattenOpmlFeeds, parseOpml } from './index';
@@ -106,5 +110,72 @@ export function buildSeedFromOpml(
   return {
     folders: ensureInboxFolder(folders, spaceId),
     feeds,
+  };
+}
+
+/**
+ * Adds folders/feeds from a seed OPML that are missing by URL.
+ * Does not remove or alter existing user feeds.
+ */
+export function mergeMissingSeedFeeds(
+  existingFolders: Folder[],
+  existingFeeds: FeedSource[],
+  opml: string,
+  spaceId: string,
+  urlOptions: SeedUrlOptions,
+): { folders: Folder[]; feeds: FeedSource[]; added: number } {
+  const seeded = buildSeedFromOpml(opml, spaceId, urlOptions);
+  const existingUrls = new Set(
+    existingFeeds
+      .filter((f) => f.spaceId === spaceId)
+      .map((f) => normalizeFeedUrl(f.url)),
+  );
+
+  let folders = [...existingFolders];
+  const folderIdByName = new Map(
+    folders
+      .filter((f) => f.spaceId === spaceId)
+      .map((f) => [f.name, f.id]),
+  );
+
+  for (const folder of seeded.folders) {
+    if (folder.id === inboxFolderId(spaceId)) continue;
+    if (folderIdByName.has(folder.name)) continue;
+    folders = [...folders, folder];
+    folderIdByName.set(folder.name, folder.id);
+  }
+
+  const feeds = [...existingFeeds];
+  let added = 0;
+  const seedFolderNameById = new Map(
+    seeded.folders.map((f) => [f.id, f.name]),
+  );
+
+  for (const seedFeed of seeded.feeds) {
+    if (existingUrls.has(normalizeFeedUrl(seedFeed.url))) continue;
+
+    const folderNames = seedFeed.folderIds
+      .map((id) => seedFolderNameById.get(id))
+      .filter((n): n is string => !!n && n !== INBOX_FOLDER_NAME);
+    const folderIds = normalizeFeedFolderIds(
+      folderNames.map(
+        (name) => folderIdByName.get(name) ?? inboxFolderId(spaceId),
+      ),
+      spaceId,
+    );
+
+    feeds.push({
+      ...seedFeed,
+      id: createId('feed'),
+      folderIds,
+    });
+    existingUrls.add(normalizeFeedUrl(seedFeed.url));
+    added += 1;
+  }
+
+  return {
+    folders: ensureInboxFolder(folders, spaceId),
+    feeds,
+    added,
   };
 }

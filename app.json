@@ -15,6 +15,7 @@
     },
     "android": {
       "package": "com.rairc.newscentralizer",
+      "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",

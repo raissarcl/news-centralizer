@@ -79,7 +79,7 @@ export type PersistedBlob = {
   settings: Settings;
 };
 
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',

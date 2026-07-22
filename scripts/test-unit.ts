@@ -10,8 +10,10 @@ import { parseFeedXml } from '../src/lib/rss/parseFeedXml';
 import { cleanFeedText } from '../src/lib/text/cleanFeedText';
 import {
   applyRefreshOntoCurrent,
+  isFeedFresh,
   mergeRefreshResults,
   refreshStateAfterFetch,
+  FEED_FRESH_MS,
   REFRESH_FAIL_THRESHOLD,
 } from '../src/lib/feeds/refreshMerge';
 import {
@@ -23,6 +25,8 @@ import {
   toggleFeedFolderMembership,
 } from '../src/lib/feeds/feedFolders';
 import { applyOpmlImport } from '../src/lib/opml/importFeeds';
+import { mergeMissingSeedFeeds } from '../src/lib/opml/seedFromOpml';
+import { DEFAULT_GENERAL_FEEDS_OPML } from '../src/data/defaultGeneralFeedsOpml';
 import { migrateBlob, mergeEngBlogsIntoBlob } from '../src/store/migrate';
 import type { FeedItem, FeedSource, Folder, PersistedBlob } from '../src/types';
 
@@ -352,8 +356,9 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     tags: [],
     settings: {},
   });
-  assert.equal(migrated.schemaVersion, 8);
-  assert.equal(migrated.settings.seededGeneral, false);
+  assert.equal(migrated.schemaVersion, 12);
+  assert.equal(migrated.settings.seededGeneral, true);
+  assert.ok(migrated.folders.some((f) => f.name === 'Cultura pop'));
   assert.equal(
     migrated.folders.find((f) => f.id === 'inbox:computing')?.name,
     'Caixa de entrada',
@@ -362,7 +367,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.equal(migrated.settings.activeSpaceId, 'computing');
 }
 
-// migrate v4 removes HN Newest and dedupes items
+// migrate v4 removes HN Newest; v9 keeps HN frontpage (main stories)
 {
   const migrated = migrateBlob({
     schemaVersion: 3,
@@ -383,6 +388,14 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
         tagIds: [],
         enabled: true,
       },
+      {
+        id: 'lobsters',
+        title: 'Lobsters',
+        url: 'https://lobste.rs/rss',
+        folderId: 'comunidade',
+        tagIds: [],
+        enabled: true,
+      },
     ],
     items: [
       item('i1', 'hn-front', '2025-01-02T00:00:00.000Z', {
@@ -391,15 +404,194 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
       item('i2', 'hn-newest', '2025-01-01T00:00:00.000Z', {
         link: 'https://news.ycombinator.com/item?id=42',
       }),
+      item('i3', 'lobsters', '2025-01-03T00:00:00.000Z', {
+        link: 'https://lobste.rs/s/abc',
+      }),
     ],
     folders: [],
     tags: [],
     settings: {},
   });
-  assert.equal(migrated.feeds.length, 1);
-  assert.equal(migrated.feeds[0].id, 'hn-front');
-  assert.equal(migrated.feeds[0].spaceId, 'computing');
-  assert.equal(migrated.items.length, 1);
+  assert.ok(migrated.feeds.some((f) => f.id === 'hn-front'));
+  assert.ok(migrated.feeds.some((f) => f.id === 'lobsters'));
+  assert.ok(!migrated.feeds.some((f) => f.id === 'hn-newest'));
+  assert.equal(
+    migrated.feeds.find((f) => f.id === 'hn-front')?.spaceId,
+    'computing',
+  );
+  assert.ok(migrated.items.some((i) => i.id === 'i1'));
+  assert.ok(migrated.items.some((i) => i.id === 'i3'));
+  assert.ok(!migrated.items.some((i) => i.id === 'i2'));
+}
+
+// migrate v9 retires Folha SP, UOL Notícias, DW titulares, DEV (keeps DW seção + Folha PE)
+{
+  const migrated = migrateBlob({
+    schemaVersion: 8,
+    feeds: [
+      {
+        id: 'folha',
+        title: 'Folha Poder',
+        url: 'https://feeds.folha.uol.com.br/poder/rss091.xml',
+        spaceId: 'general',
+        folderIds: ['portais'],
+        tagIds: [],
+        enabled: true,
+      },
+      {
+        id: 'uol',
+        title: 'UOL Notícias',
+        url: 'https://rss.uol.com.br/feed/noticias.xml',
+        spaceId: 'general',
+        folderIds: ['portais'],
+        tagIds: [],
+        enabled: true,
+      },
+      {
+        id: 'dw-top',
+        title: 'DW Brasil - Titulares',
+        url: 'https://rss.dw.com/rdf/rss-br-top',
+        spaceId: 'general',
+        folderIds: ['intl'],
+        tagIds: [],
+        enabled: true,
+      },
+      {
+        id: 'dw-br',
+        title: 'DW Brasil - Seção Brasil',
+        url: 'https://rss.dw.com/rdf/rss-br-br',
+        spaceId: 'general',
+        folderIds: ['intl'],
+        tagIds: [],
+        enabled: true,
+      },
+      {
+        id: 'folhape',
+        title: 'Folha de Pernambuco',
+        url: 'https://www.folhape.com.br/noticias/feed/',
+        spaceId: 'general',
+        folderIds: ['regional'],
+        tagIds: [],
+        enabled: true,
+      },
+      {
+        id: 'devto',
+        title: 'DEV Community',
+        url: 'https://dev.to/feed',
+        spaceId: 'computing',
+        folderIds: ['comunidade'],
+        tagIds: [],
+        enabled: true,
+      },
+    ],
+    items: [],
+    folders: [],
+    tags: [],
+    settings: {},
+  });
+  assert.ok(migrated.feeds.some((f) => f.id === 'dw-br'));
+  assert.ok(migrated.feeds.some((f) => f.id === 'folhape'));
+  assert.ok(!migrated.feeds.some((f) => f.id === 'folha'));
+  assert.ok(!migrated.feeds.some((f) => f.id === 'uol'));
+  assert.ok(!migrated.feeds.some((f) => f.id === 'dw-top'));
+  assert.ok(!migrated.feeds.some((f) => f.id === 'devto'));
+  // v10 also ensures HN frontpage exists
+  assert.ok(migrated.feeds.some((f) => f.url.includes('hnrss.org/frontpage')));
+}
+
+// migrate v10 restores HN frontpage if missing
+{
+  const migrated = migrateBlob({
+    schemaVersion: 9,
+    feeds: [
+      {
+        id: 'lobsters',
+        title: 'Lobsters',
+        url: 'https://lobste.rs/rss',
+        spaceId: 'computing',
+        folderIds: ['comunidade'],
+        tagIds: [],
+        enabled: true,
+      },
+    ],
+    items: [],
+    folders: [
+      {
+        id: 'comunidade',
+        name: 'Comunidade',
+        spaceId: 'computing',
+        sortOrder: 0,
+      },
+    ],
+    tags: [],
+    settings: {},
+  });
+  assert.ok(migrated.feeds.some((f) => f.url.includes('hnrss.org/frontpage')));
+  assert.ok(migrated.feeds.some((f) => f.id === 'lobsters'));
+}
+
+// mergeMissingSeedFeeds adds Cultura pop when only Portais exist
+{
+  const spaceId = 'general';
+  const existingFolders: Folder[] = [
+    {
+      id: 'general-portais',
+      name: 'Portais',
+      spaceId,
+      sortOrder: 0,
+    },
+  ];
+  const existingFeeds: FeedSource[] = [
+    {
+      ...feed('cnn', ['general-portais']),
+      spaceId,
+      url: 'https://www.cnnbrasil.com.br/feed/',
+      title: 'CNN Brasil',
+    },
+  ];
+  const merged = mergeMissingSeedFeeds(
+    existingFolders,
+    existingFeeds,
+    DEFAULT_GENERAL_FEEDS_OPML,
+    spaceId,
+    { allowHttp: false },
+  );
+  assert.ok(merged.added > 0);
+  assert.ok(merged.folders.some((f) => f.name === 'Cultura pop'));
+  assert.ok(merged.feeds.some((f) => f.title === 'Contigo!'));
+  assert.ok(merged.feeds.some((f) => f.id === 'cnn'));
+}
+
+// migrate v11 merges missing general seed feeds (Cultura pop)
+{
+  const migrated = migrateBlob({
+    schemaVersion: 10,
+    feeds: [
+      {
+        id: 'cnn',
+        title: 'CNN Brasil',
+        url: 'https://www.cnnbrasil.com.br/feed/',
+        spaceId: 'general',
+        folderIds: ['general-portais'],
+        tagIds: [],
+        enabled: true,
+      },
+    ],
+    items: [],
+    folders: [
+      {
+        id: 'general-portais',
+        name: 'Portais',
+        spaceId: 'general',
+        sortOrder: 0,
+      },
+    ],
+    tags: [],
+    settings: { seededGeneral: true },
+  });
+  assert.ok(migrated.folders.some((f) => f.name === 'Cultura pop'));
+  assert.ok(migrated.feeds.some((f) => f.title === 'Contigo!'));
+  assert.ok(migrated.feeds.some((f) => f.id === 'cnn'));
 }
 
 // migrate v6 removes HN AI feed
@@ -429,8 +621,9 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     tags: [],
     settings: {},
   });
-  assert.equal(migrated.feeds.length, 1);
-  assert.equal(migrated.feeds[0].id, 'openai');
+  assert.ok(migrated.feeds.some((f) => f.id === 'openai'));
+  assert.ok(!migrated.feeds.some((f) => f.id === 'hn-ai'));
+  assert.ok(migrated.feeds.some((f) => f.url.includes('hnrss.org/frontpage')));
   assert.equal(migrated.items.length, 0);
 }
 
@@ -504,6 +697,24 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.equal(ok.refreshPausedUntil, undefined);
 }
 
+// isFeedFresh skips recent successful fetches
+{
+  const now = Date.parse('2026-01-02T00:00:00.000Z');
+  const fresh = feed('fresh');
+  fresh.lastFetchedAt = new Date(now - FEED_FRESH_MS / 2).toISOString();
+  fresh.lastError = undefined;
+  assert.equal(isFeedFresh(fresh, now), true);
+
+  const stale = feed('stale');
+  stale.lastFetchedAt = new Date(now - FEED_FRESH_MS - 1).toISOString();
+  assert.equal(isFeedFresh(stale, now), false);
+
+  const errored = feed('err');
+  errored.lastFetchedAt = new Date(now - 1000).toISOString();
+  errored.lastError = 'network';
+  assert.equal(isFeedFresh(errored, now), false);
+}
+
 // mergeRefreshResults: space-scoped link dedupe + injected fetch
 async function testMergeRefreshResults() {
   const feeds = [
@@ -515,9 +726,15 @@ async function testMergeRefreshResults() {
       link: 'https://example.com/shared',
     }),
   ];
+  let batchCalls = 0;
+  let batchNewItems = 0;
   const result = await mergeRefreshResults(feeds, feeds, existing, {
     allowHttp: false,
     now: Date.parse('2026-01-02T00:00:00.000Z'),
+    onFeedBatch: (batch) => {
+      batchCalls += 1;
+      batchNewItems += batch.newItems.length;
+    },
     fetchFeedFn: async (source) => ({
       notModified: false,
       entries: [
@@ -535,6 +752,8 @@ async function testMergeRefreshResults() {
   assert.equal(result.newItems[0].feedId, 'b');
   assert.equal(result.newCountBySpace.general, 1);
   assert.equal(result.newCountBySpace.computing ?? 0, 0);
+  assert.ok(batchCalls >= 1);
+  assert.equal(batchNewItems, 1);
 }
 
 // applyOpmlImport merge + replace

@@ -132,7 +132,7 @@ export default function TimelineScreen() {
   const onRefresh = useCallback(async () => {
     setLocalRefreshing(true);
     try {
-      const { newCount, newHeadlines } = await refreshAll();
+      const { newCount, newHeadlines } = await refreshAll({ force: true });
       if (notifyOnNewItems) {
         await notifyNewItems(newCount, newHeadlines);
       }

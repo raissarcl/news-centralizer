@@ -5,10 +5,10 @@ export const DEFAULT_GENERAL_FEEDS_OPML = `<?xml version="1.0" encoding="UTF-8"?
   </head>
   <body>
     <outline text="Portais" title="Portais">
-<outline type="rss" text="UOL Notícias" title="UOL Notícias" xmlUrl="https://rss.uol.com.br/feed/noticias.xml" htmlUrl="https://noticias.uol.com.br/" />
       <outline type="rss" text="CNN Brasil" title="CNN Brasil" xmlUrl="https://www.cnnbrasil.com.br/feed/" htmlUrl="https://www.cnnbrasil.com.br/" />
       <outline type="rss" text="Agência Brasil" title="Agência Brasil" xmlUrl="https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml" htmlUrl="https://agenciabrasil.ebc.com.br/" />
       <outline type="rss" text="BBC Brasil" title="BBC Brasil" xmlUrl="https://feeds.bbci.co.uk/portuguese/rss.xml" htmlUrl="https://www.bbc.com/portuguese" />
+      <outline type="rss" text="Metrópole Online" title="Metrópole Online" xmlUrl="https://metropoleonline.com.br/rss/latest-posts" htmlUrl="https://metropoleonline.com.br/" />
     </outline>
     <outline text="Cultura pop" title="Cultura pop">
       <outline type="rss" text="POPline" title="POPline" xmlUrl="https://portalpopline.com.br/feed/" htmlUrl="https://portalpopline.com.br/" />

@@ -12,11 +12,12 @@ const localGeneralFeedsOpml = path.resolve(
 
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  const normalized = moduleName.replace(/\\/g, '/');
   const isGeneralFeedsOpml =
-    moduleName === './defaultGeneralFeedsOpml' ||
-    moduleName === '../data/defaultGeneralFeedsOpml' ||
-    moduleName.endsWith('/defaultGeneralFeedsOpml') ||
-    moduleName === '@/data/defaultGeneralFeedsOpml';
+    normalized === './defaultGeneralFeedsOpml' ||
+    normalized === '../data/defaultGeneralFeedsOpml' ||
+    normalized.endsWith('/defaultGeneralFeedsOpml') ||
+    normalized === '@/data/defaultGeneralFeedsOpml';
 
   if (isGeneralFeedsOpml && fs.existsSync(localGeneralFeedsOpml)) {
     return {

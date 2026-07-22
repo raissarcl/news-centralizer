@@ -22,13 +22,16 @@ import {
   GENERAL_SPACE_ID,
   getDefaultSpaces,
 } from '../lib/spaces';
-import { INBOX_FOLDER_NAME } from '../lib/opml/seedFromOpml';
+import { INBOX_FOLDER_NAME, mergeMissingSeedFeeds } from '../lib/opml/seedFromOpml';
+import { DEFAULT_GENERAL_FEEDS_OPML } from '../data/defaultGeneralFeedsOpml';
 import {
   applyCatalogRepairs,
   dedupeHnAndItems,
   getFeedFolderIdsFromLegacy,
   mergeEngBlogsIntoBlob,
+  ensureHnFrontpageFeed,
   removeBrokenHnAiFeed,
+  removeRetiredCatalogFeeds,
 } from './catalogRepairs';
 
 export {
@@ -286,6 +289,48 @@ export function migrateBlob(raw: unknown): PersistedBlob {
 
   if (version < 6) {
     migrated = removeBrokenHnAiFeed(migrated);
+  }
+
+  if (version < 9) {
+    migrated = removeRetiredCatalogFeeds(migrated);
+  }
+
+  if (version < 10) {
+    migrated = ensureHnFrontpageFeed(migrated);
+  }
+
+  if (version < 11) {
+    const merged = mergeMissingSeedFeeds(
+      migrated.folders,
+      migrated.feeds,
+      DEFAULT_GENERAL_FEEDS_OPML,
+      GENERAL_SPACE_ID,
+      { allowHttp: migrated.settings.allowHttpFeeds },
+    );
+    migrated = {
+      ...migrated,
+      folders: merged.folders,
+      feeds: merged.feeds,
+      settings: {
+        ...migrated.settings,
+        seededGeneral: true,
+      },
+    };
+  }
+
+  if (version < 12) {
+    const merged = mergeMissingSeedFeeds(
+      migrated.folders,
+      migrated.feeds,
+      DEFAULT_GENERAL_FEEDS_OPML,
+      GENERAL_SPACE_ID,
+      { allowHttp: migrated.settings.allowHttpFeeds },
+    );
+    migrated = {
+      ...migrated,
+      folders: merged.folders,
+      feeds: merged.feeds,
+    };
   }
 
   // Always-on catalog repairs (spaces/inboxes + known broken URL rewrites).

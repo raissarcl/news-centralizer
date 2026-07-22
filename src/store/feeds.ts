@@ -14,8 +14,10 @@ import {
 } from '../lib/feeds/feedFolders';
 import {
   applyRefreshOntoCurrent,
+  isFeedFresh,
   isFeedPaused,
   mergeRefreshResults,
+  type RefreshFeedBatch,
 } from '../lib/feeds/refreshMerge';
 import {
   filterItemsForFeed,
@@ -65,6 +67,7 @@ export { filterItemsForFeed, filterItemsForFolder, selectVisibleItems };
 export {
   applyRefreshOntoCurrent,
   mergeRefreshResults,
+  isFeedFresh,
   isFeedPaused,
   refreshStateAfterFetch,
 } from '../lib/feeds/refreshMerge';
@@ -72,6 +75,47 @@ export {
 async function afterDataChange(): Promise<void> {
   const { syncAndroidWidget } = await import('../lib/widget');
   await syncAndroidWidget();
+}
+
+const PROGRESS_THROTTLE_MS = 175;
+
+function createThrottledProgress(
+  fn: (done: number, total: number) => void,
+  intervalMs = PROGRESS_THROTTLE_MS,
+): (done: number, total: number) => void {
+  let last = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pending: { done: number; total: number } | null = null;
+  const flush = () => {
+    timer = null;
+    if (!pending) return;
+    last = Date.now();
+    fn(pending.done, pending.total);
+    pending = null;
+  };
+  return (done, total) => {
+    pending = { done, total };
+    const now = Date.now();
+    if (now - last >= intervalMs) {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      last = now;
+      fn(done, total);
+      pending = null;
+      return;
+    }
+    if (!timer) {
+      timer = setTimeout(flush, intervalMs - (now - last));
+    }
+  };
+}
+
+function persistAfterRefresh(): void {
+  void persistApp().then(() => {
+    void afterDataChange();
+  });
 }
 
 function feedUrlOptions() {
@@ -97,7 +141,9 @@ type FeedsState = {
   seedDefaultsIfNeeded: () => Promise<void>;
   seedGeneralIfNeeded: () => Promise<void>;
   setActiveSpaceId: (spaceId: string) => Promise<void>;
-  refreshAll: () => Promise<{ newCount: number; newHeadlines: string[] }>;
+  refreshAll: (options?: {
+    force?: boolean;
+  }) => Promise<{ newCount: number; newHeadlines: string[] }>;
   refreshFeed: (
     feedId: string,
   ) => Promise<{ newCount: number; newHeadlines: string[] }>;
@@ -238,16 +284,22 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     useTimelineUiStore.getState().resetTimelineFilters();
     await useSettingsStore.getState().update({ activeSpaceId: spaceId });
     if (useSettingsStore.getState().settings.refreshOnOpen) {
-      await get().refreshAll();
+      void get().refreshAll();
     }
   },
 
-  refreshAll: async () => {
+  refreshAll: async (options) => {
+    const force = options?.force === true;
     const state = get();
     const activeSpaceId = resolveActiveSpaceFromStores();
-    const enabledFeeds = state.feeds.filter(
-      (f) => f.spaceId === activeSpaceId && f.enabled && !isFeedPaused(f),
-    );
+    const now = Date.now();
+    const enabledFeeds = state.feeds.filter((f) => {
+      if (f.spaceId !== activeSpaceId || !f.enabled || isFeedPaused(f, now)) {
+        return false;
+      }
+      if (!force && isFeedFresh(f, now)) return false;
+      return true;
+    });
     if (enabledFeeds.length === 0) return { newCount: 0, newHeadlines: [] };
 
     set({
@@ -255,36 +307,44 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       refreshProgress: { done: 0, total: enabledFeeds.length },
     });
 
-    const {
-      feedUpdates,
-      newItems,
-      imagePatches,
-      newCountBySpace,
-      newHeadlinesBySpace,
-    } = await mergeRefreshResults(state.feeds, enabledFeeds, state.items, {
-      allowHttp: feedUrlOptions().allowHttp,
-      onProgress: (done, total) => set({ refreshProgress: { done, total } }),
-    });
+    const retentionDays = useSettingsStore.getState().settings.retentionDays;
+    let applyQueue: Promise<void> = Promise.resolve();
+    const onFeedBatch = (batch: RefreshFeedBatch) => {
+      applyQueue = applyQueue.then(() => {
+        const current = get();
+        const { feeds, items } = applyRefreshOntoCurrent(
+          current.feeds,
+          current.items,
+          batch.feedUpdates,
+          batch.newItems,
+          batch.imagePatches,
+          current.folders,
+          retentionDays,
+        );
+        set({ feeds, items });
+      });
+    };
 
-    const current = get();
-    const { feeds, items } = applyRefreshOntoCurrent(
-      current.feeds,
-      current.items,
-      feedUpdates,
-      newItems,
-      imagePatches,
-      current.folders,
-      useSettingsStore.getState().settings.retentionDays,
+    const { newCountBySpace, newHeadlinesBySpace } = await mergeRefreshResults(
+      state.feeds,
+      enabledFeeds,
+      state.items,
+      {
+        allowHttp: feedUrlOptions().allowHttp,
+        now,
+        onProgress: createThrottledProgress((done, total) =>
+          set({ refreshProgress: { done, total } }),
+        ),
+        onFeedBatch,
+      },
     );
 
+    await applyQueue;
     set({
-      feeds,
-      items,
       refreshing: false,
       refreshProgress: null,
     });
-    await persistApp();
-    await afterDataChange();
+    persistAfterRefresh();
 
     return {
       newCount: newCountBySpace[activeSpaceId] ?? 0,
@@ -300,31 +360,38 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       return { newCount: 0, newHeadlines: [] as string[] };
 
     set({ refreshing: true, refreshProgress: { done: 0, total: 1 } });
-    const {
-      feedUpdates,
-      newItems,
-      imagePatches,
-      newCountBySpace,
-      newHeadlinesBySpace,
-    } = await mergeRefreshResults(state.feeds, [feed], state.items, {
-      allowHttp: feedUrlOptions().allowHttp,
-      onProgress: () => set({ refreshProgress: { done: 1, total: 1 } }),
-    });
+    const retentionDays = useSettingsStore.getState().settings.retentionDays;
+    let applyQueue: Promise<void> = Promise.resolve();
+    const onFeedBatch = (batch: RefreshFeedBatch) => {
+      applyQueue = applyQueue.then(() => {
+        const current = get();
+        const { feeds, items } = applyRefreshOntoCurrent(
+          current.feeds,
+          current.items,
+          batch.feedUpdates,
+          batch.newItems,
+          batch.imagePatches,
+          current.folders,
+          retentionDays,
+        );
+        set({ feeds, items });
+      });
+    };
 
-    const current = get();
-    const { feeds, items } = applyRefreshOntoCurrent(
-      current.feeds,
-      current.items,
-      feedUpdates,
-      newItems,
-      imagePatches,
-      current.folders,
-      useSettingsStore.getState().settings.retentionDays,
+    const { newCountBySpace, newHeadlinesBySpace } = await mergeRefreshResults(
+      state.feeds,
+      [feed],
+      state.items,
+      {
+        allowHttp: feedUrlOptions().allowHttp,
+        onProgress: () => set({ refreshProgress: { done: 1, total: 1 } }),
+        onFeedBatch,
+      },
     );
 
-    set({ feeds, items, refreshing: false, refreshProgress: null });
-    await persistApp();
-    await afterDataChange();
+    await applyQueue;
+    set({ refreshing: false, refreshProgress: null });
+    persistAfterRefresh();
     return {
       newCount: newCountBySpace[feed.spaceId] ?? 0,
       newHeadlines: newHeadlinesBySpace[feed.spaceId] ?? [],

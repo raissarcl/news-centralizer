@@ -273,7 +273,7 @@ export default function FolderDetailScreen() {
             </Text>
             {!hasActiveFilters ? (
               <Pressable
-                onPress={() => void refreshAll()}
+                onPress={() => void refreshAll({ force: true })}
                 disabled={refreshing}
                 style={[styles.refreshBtn, { backgroundColor: tokens.primary }]}
               >

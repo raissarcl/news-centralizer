@@ -103,6 +103,85 @@ export function removeBrokenHnAiFeed(blob: PersistedBlob): PersistedBlob {
   return removeFeedsByUrl(blob, BROKEN_HN_AI_URL);
 }
 
+const HN_FRONTPAGE_URL = normalizeFeedUrl('https://hnrss.org/frontpage');
+
+const RETIRED_FEED_URLS = [
+  'https://rss.uol.com.br/feed/noticias.xml',
+  'https://rss.dw.com/rdf/rss-br-top',
+  'https://dev.to/feed',
+  // Keep HN frontpage; retire the secondary HN feeds only.
+  'https://hnrss.org/newest',
+  'https://hnrss.org/newest?search=AI',
+].map((url) => normalizeFeedUrl(url));
+
+/** Folha de SP host patterns (not Folha de Pernambuco). */
+function isRetiredFolhaSpUrl(url: string): boolean {
+  const n = normalizeFeedUrl(url).toLowerCase();
+  return (
+    n.includes('feeds.folha.uol.com.br') || n.includes('www1.folha.uol.com.br')
+  );
+}
+
+/** Drop catalog feeds the user asked to retire from seed + existing installs. */
+export function removeRetiredCatalogFeeds(blob: PersistedBlob): PersistedBlob {
+  const removedFeedIds = new Set(
+    blob.feeds
+      .filter((f) => {
+        const n = normalizeFeedUrl(f.url);
+        return RETIRED_FEED_URLS.includes(n) || isRetiredFolhaSpUrl(f.url);
+      })
+      .map((f) => f.id),
+  );
+  if (removedFeedIds.size === 0) return blob;
+  return {
+    ...blob,
+    feeds: blob.feeds.filter((f) => !removedFeedIds.has(f.id)),
+    items: blob.items.filter((i) => !removedFeedIds.has(i.feedId)),
+  };
+}
+
+/** Re-add HN front page if a previous migration removed it by mistake. */
+export function ensureHnFrontpageFeed(blob: PersistedBlob): PersistedBlob {
+  const hasFrontpage = blob.feeds.some(
+    (f) => normalizeFeedUrl(f.url) === HN_FRONTPAGE_URL,
+  );
+  if (hasFrontpage) return blob;
+
+  const spaces = ensureDefaultSpaces(blob.spaces);
+  let folders = [...blob.folders];
+  const computingFolders = folders.filter(
+    (f) => f.spaceId === COMPUTING_SPACE_ID,
+  );
+  let comunidade = computingFolders.find((f) => f.name === 'Comunidade');
+  if (!comunidade) {
+    comunidade = {
+      id: slugifyFolder('Comunidade') || createId('folder'),
+      name: 'Comunidade',
+      spaceId: COMPUTING_SPACE_ID,
+      sortOrder: computingFolders.length,
+    };
+    folders = [...folders, comunidade];
+  }
+
+  const feed: FeedSource = {
+    id: createId('feed'),
+    title: 'Hacker News — Front Page',
+    url: 'https://hnrss.org/frontpage',
+    siteUrl: 'https://news.ycombinator.com/',
+    spaceId: COMPUTING_SPACE_ID,
+    folderIds: normalizeFeedFolderIds([comunidade.id], COMPUTING_SPACE_ID),
+    tagIds: [],
+    enabled: true,
+  };
+
+  return {
+    ...blob,
+    spaces,
+    folders,
+    feeds: [...blob.feeds, feed],
+  };
+}
+
 function getFeedFolderIdsFromLegacy(
   feed: FeedSource & { folderId?: string },
 ): string[] {

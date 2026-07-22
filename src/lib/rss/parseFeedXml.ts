@@ -1,10 +1,10 @@
-import { XMLParser } from 'fast-xml-parser';
 import { isPublishedAtDisplayable } from '@/lib/items/publishDate';
+import { unwrapEmbeddedHttpUrl, validateItemLink } from '@/lib/security/urls';
 import { cleanFeedText } from '@/lib/text/cleanFeedText';
-import { validateItemLink, unwrapEmbeddedHttpUrl } from '@/lib/security/urls';
+import { XMLParser } from 'fast-xml-parser';
 
 export const PARSE_LIMITS = {
-  maxEntries: 500,
+  maxEntries: 80,
   maxTitle: 500,
   maxSummary: 2000,
   maxLink: 2048,
@@ -25,6 +25,8 @@ const XML_PARSER_OPTIONS = {
   removeNSPrefix: true,
   processEntities: false,
 } as const;
+
+const sharedParser = new XMLParser(XML_PARSER_OPTIONS);
 
 function asArray<T>(value: T | T[] | undefined): T[] {
   if (value == null) return [];
@@ -147,9 +149,7 @@ function extractImageUrl(
   return undefined;
 }
 
-function parseAtomEntries(xml: string): RawFeedEntry[] {
-  const parser = new XMLParser(XML_PARSER_OPTIONS);
-  const doc = parser.parse(xml) as Record<string, unknown>;
+function parseAtomFromDoc(doc: Record<string, unknown>): RawFeedEntry[] {
   const feed = (doc.feed ?? doc['atom:feed']) as
     Record<string, unknown> | undefined;
   if (!feed) return [];
@@ -177,9 +177,7 @@ function parseAtomEntries(xml: string): RawFeedEntry[] {
     .filter((entry): entry is RawFeedEntry => entry !== null);
 }
 
-function parseRssItems(xml: string): RawFeedEntry[] {
-  const parser = new XMLParser(XML_PARSER_OPTIONS);
-  const doc = parser.parse(xml) as Record<string, unknown>;
+function parseRssFromDoc(doc: Record<string, unknown>): RawFeedEntry[] {
   const rss = doc.rss as Record<string, unknown> | undefined;
   const channel = rss?.channel as Record<string, unknown> | undefined;
   if (!channel) return [];
@@ -215,9 +213,7 @@ function parseRssItems(xml: string): RawFeedEntry[] {
  * RSS 1.0 / RDF (e.g. Deutsche Welle): items are siblings of channel under RDF,
  * not nested inside channel like RSS 2.0.
  */
-function parseRdfItems(xml: string): RawFeedEntry[] {
-  const parser = new XMLParser(XML_PARSER_OPTIONS);
-  const doc = parser.parse(xml) as Record<string, unknown>;
+function parseRdfFromDoc(doc: Record<string, unknown>): RawFeedEntry[] {
   const rdf = (doc.RDF ?? doc['rdf:RDF']) as
     Record<string, unknown> | undefined;
   if (!rdf) return [];
@@ -254,33 +250,40 @@ function parseRdfItems(xml: string): RawFeedEntry[] {
     .filter((entry): entry is RawFeedEntry => entry !== null);
 }
 
+function detectFeedFormat(trimmed: string): 'atom' | 'rdf' | 'rss' {
+  const looksAtom = /<feed[\s>]/i.test(trimmed) || /<entry[\s>]/i.test(trimmed);
+  const looksRdf =
+    /<(?:rdf:)?RDF[\s>]/i.test(trimmed) ||
+    /xmlns:rdf=/i.test(trimmed) ||
+    /rss\/1\.0/i.test(trimmed);
+
+  if (looksAtom && !looksRdf) return 'atom';
+  if (looksRdf) return 'rdf';
+  return 'rss';
+}
+
 export function parseFeedXml(xml: string): RawFeedEntry[] {
   const trimmed = xml.trim();
   if (!trimmed) return [];
 
   try {
-    let entries: RawFeedEntry[] = [];
-    const looksAtom =
-      /<feed[\s>]/i.test(trimmed) || /<entry[\s>]/i.test(trimmed);
-    const looksRdf =
-      /<(?:rdf:)?RDF[\s>]/i.test(trimmed) ||
-      /xmlns:rdf=/i.test(trimmed) ||
-      /rss\/1\.0/i.test(trimmed);
+    const format = detectFeedFormat(trimmed);
+    const doc = sharedParser.parse(trimmed) as Record<string, unknown>;
 
-    if (looksAtom && !looksRdf) {
-      entries = parseAtomEntries(trimmed);
-    }
-    if (entries.length === 0 && looksRdf) {
-      entries = parseRdfItems(trimmed);
-    }
-    if (entries.length === 0) {
-      entries = parseRssItems(trimmed);
-    }
-    if (entries.length === 0 && !looksAtom) {
-      entries = parseAtomEntries(trimmed);
-    }
-    if (entries.length === 0) {
-      entries = parseRdfItems(trimmed);
+    // One XML parse; try the detected format first, then fall back on the same doc.
+    let entries: RawFeedEntry[] = [];
+    if (format === 'atom') {
+      entries = parseAtomFromDoc(doc);
+      if (entries.length === 0) entries = parseRssFromDoc(doc);
+      if (entries.length === 0) entries = parseRdfFromDoc(doc);
+    } else if (format === 'rdf') {
+      entries = parseRdfFromDoc(doc);
+      if (entries.length === 0) entries = parseRssFromDoc(doc);
+      if (entries.length === 0) entries = parseAtomFromDoc(doc);
+    } else {
+      entries = parseRssFromDoc(doc);
+      if (entries.length === 0) entries = parseAtomFromDoc(doc);
+      if (entries.length === 0) entries = parseRdfFromDoc(doc);
     }
 
     return entries.slice(0, PARSE_LIMITS.maxEntries);

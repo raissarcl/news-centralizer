@@ -53,6 +53,7 @@
     "build:apk": "build-apk.bat",
     "validate-feeds": "tsx scripts/validate-feeds.ts",
     "validate-engblogs": "npm run validate-feeds -- src/data/engblogs-starter.opml",
+    "sync-default-feeds": "tsx scripts/sync-default-feeds-opml.ts",
     "sync-general-feeds": "tsx scripts/sync-general-feeds-opml.ts",
     "sync-general-feeds:local": "tsx scripts/sync-general-feeds-opml.ts --local",
     "audit-general-feeds": "tsx scripts/audit-general-feeds.ts",

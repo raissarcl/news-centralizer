@@ -6,9 +6,8 @@ export const DEFAULT_FEEDS_OPML = `<?xml version="1.0" encoding="UTF-8"?>
   <body>
     <outline text="Comunidade" title="Comunidade">
       <outline type="rss" text="Hacker News — Front Page" title="Hacker News — Front Page" xmlUrl="https://hnrss.org/frontpage" htmlUrl="https://news.ycombinator.com/" />
-<outline type="rss" text="Lobsters" title="Lobsters" xmlUrl="https://lobste.rs/rss" htmlUrl="https://lobste.rs/" />
+      <outline type="rss" text="Lobsters" title="Lobsters" xmlUrl="https://lobste.rs/rss" htmlUrl="https://lobste.rs/" />
       <outline type="rss" text="TabNews — Recentes" title="TabNews — Recentes" xmlUrl="https://www.tabnews.com.br/recentes/rss" htmlUrl="https://www.tabnews.com.br/" />
-      <outline type="rss" text="DEV Community" title="DEV Community" xmlUrl="https://dev.to/feed" htmlUrl="https://dev.to/" />
     </outline>
     <outline text="Frontend" title="Frontend">
       <outline type="rss" text="CSS-Tricks" title="CSS-Tricks" xmlUrl="https://css-tricks.com/feed/" htmlUrl="https://css-tricks.com/" />
