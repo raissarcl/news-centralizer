@@ -356,7 +356,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     tags: [],
     settings: {},
   });
-  assert.equal(migrated.schemaVersion, 12);
+  assert.equal(migrated.schemaVersion, 13);
   assert.equal(migrated.settings.seededGeneral, true);
   assert.ok(migrated.folders.some((f) => f.name === 'Cultura pop'));
   assert.equal(
@@ -592,6 +592,39 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.ok(migrated.folders.some((f) => f.name === 'Cultura pop'));
   assert.ok(migrated.feeds.some((f) => f.title === 'Contigo!'));
   assert.ok(migrated.feeds.some((f) => f.id === 'cnn'));
+}
+
+// migrate v13 restores pruned computing feeds (e.g. React Blog)
+{
+  const migrated = migrateBlob({
+    schemaVersion: 12,
+    feeds: [
+      {
+        id: 'lobsters',
+        title: 'Lobsters',
+        url: 'https://lobste.rs/rss',
+        spaceId: 'computing',
+        folderIds: ['comunidade'],
+        tagIds: [],
+        enabled: true,
+      },
+    ],
+    items: [],
+    folders: [
+      {
+        id: 'comunidade',
+        name: 'Comunidade',
+        spaceId: 'computing',
+        sortOrder: 0,
+      },
+    ],
+    tags: [],
+    settings: { seeded: true },
+  });
+  assert.ok(migrated.feeds.some((f) => f.title === 'React Blog'));
+  assert.ok(migrated.feeds.some((f) => f.title === 'web.dev'));
+  assert.ok(migrated.feeds.some((f) => f.id === 'lobsters'));
+  assert.ok(!migrated.feeds.some((f) => /dev\.to\/feed/i.test(f.url)));
 }
 
 // migrate v6 removes HN AI feed

@@ -24,6 +24,7 @@ import {
 } from '../lib/spaces';
 import { INBOX_FOLDER_NAME, mergeMissingSeedFeeds } from '../lib/opml/seedFromOpml';
 import { DEFAULT_GENERAL_FEEDS_OPML } from '../data/defaultGeneralFeedsOpml';
+import { DEFAULT_FEEDS_OPML } from '../data/defaultFeedsOpml';
 import {
   applyCatalogRepairs,
   dedupeHnAndItems,
@@ -331,6 +332,26 @@ export function migrateBlob(raw: unknown): PersistedBlob {
       folders: merged.folders,
       feeds: merged.feeds,
     };
+  }
+
+  if (version < 13) {
+    const merged = mergeMissingSeedFeeds(
+      migrated.folders,
+      migrated.feeds,
+      DEFAULT_FEEDS_OPML,
+      COMPUTING_SPACE_ID,
+      { allowHttp: migrated.settings.allowHttpFeeds },
+    );
+    migrated = {
+      ...migrated,
+      folders: merged.folders,
+      feeds: merged.feeds,
+      settings: {
+        ...migrated.settings,
+        seeded: true,
+      },
+    };
+    migrated = mergeEngBlogsIntoBlob(migrated);
   }
 
   // Always-on catalog repairs (spaces/inboxes + known broken URL rewrites).
