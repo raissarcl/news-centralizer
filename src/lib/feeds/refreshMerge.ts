@@ -6,6 +6,7 @@ import {
   fetchFeed,
   mapPool,
   REFRESH_CONCURRENCY,
+  type FetchFeedOptions,
   type FetchFeedResult,
 } from '../rss/fetchFeed';
 import type { FeedItem, FeedSource, Folder } from '../../types';
@@ -14,8 +15,13 @@ export const REFRESH_FAIL_THRESHOLD = 3;
 export const REFRESH_PAUSE_MS = 15 * 60 * 1000;
 /** Skip refetch in refreshAll when last success is newer than this (unless force). */
 export const FEED_FRESH_MS = 15 * 60 * 1000;
+/**
+ * Even with force (PTR), skip feeds fetched more recently than this.
+ * Avoids re-hitting all ~50 feeds on rapid pull-to-refresh.
+ */
+export const FEED_FORCE_MIN_AGE_MS = 90_000;
 /** Apply UI merge every N completed feeds during refresh. */
-export const REFRESH_APPLY_BATCH_SIZE = 2;
+export const REFRESH_APPLY_BATCH_SIZE = 8;
 
 export type FeedRefreshPatch = Pick<
   FeedSource,
@@ -45,6 +51,53 @@ export function isFeedFresh(feed: FeedSource, now = Date.now()): boolean {
   const fetchedAt = new Date(feed.lastFetchedAt).getTime();
   if (Number.isNaN(fetchedAt)) return false;
   return now - fetchedAt < FEED_FRESH_MS;
+}
+
+/** Too recently fetched to refetch even on soft force (PTR). */
+export function isFeedTooRecentForForce(
+  feed: FeedSource,
+  now = Date.now(),
+): boolean {
+  if (!feed.lastFetchedAt || feed.lastError) return false;
+  const fetchedAt = new Date(feed.lastFetchedAt).getTime();
+  if (Number.isNaN(fetchedAt)) return false;
+  return now - fetchedAt < FEED_FORCE_MIN_AGE_MS;
+}
+
+/**
+ * Whether a feed should be included in refreshAll for the given force mode.
+ */
+export function shouldRefreshFeed(
+  feed: FeedSource,
+  force: boolean,
+  now = Date.now(),
+): boolean {
+  if (!feed.enabled || isFeedPaused(feed, now)) return false;
+  if (force) {
+    return !isFeedTooRecentForForce(feed, now);
+  }
+  return !isFeedFresh(feed, now);
+}
+
+/**
+ * Lower score = fetch sooner. Healthy + etag first; errored feeds last.
+ */
+export function refreshPriorityScore(feed: FeedSource): number {
+  const failCount = feed.refreshFailCount ?? 0;
+  const hasError = Boolean(feed.lastError);
+  const hasEtag = Boolean(feed.etag || feed.lastModified);
+  if (hasError) return 300 + failCount;
+  if (failCount > 0) return 200 + failCount;
+  if (hasEtag) return 0;
+  return 100;
+}
+
+export function sortFeedsByRefreshPriority(
+  feeds: FeedSource[],
+): FeedSource[] {
+  return [...feeds].sort(
+    (a, b) => refreshPriorityScore(a) - refreshPriorityScore(b),
+  );
 }
 
 export function refreshStateAfterFetch(
@@ -121,9 +174,12 @@ export type MergeRefreshOptions = {
   onFeedBatch?: (batch: RefreshFeedBatch) => void;
   fetchFeedFn?: (
     source: FeedSource,
-    options?: { allowHttp?: boolean },
+    options?: FetchFeedOptions,
   ) => Promise<FetchFeedResult>;
   now?: number;
+  concurrency?: number;
+  /** Default false for bulk refresh; true for single-feed refresh. */
+  retryOn403?: boolean;
 };
 
 export async function mergeRefreshResults(
@@ -144,9 +200,13 @@ export async function mergeRefreshResults(
     onFeedBatch,
     fetchFeedFn = fetchFeed,
     now = Date.now(),
+    concurrency = REFRESH_CONCURRENCY,
+    retryOn403 = false,
   } = options;
+
+  const orderedFeeds = sortFeedsByRefreshPriority(enabledFeeds);
   let done = 0;
-  const total = enabledFeeds.length;
+  const total = orderedFeeds.length;
   const feedById = new Map(allFeeds.map((f) => [f.id, f]));
   const existingById = new Map(existingItems.map((i) => [i.id, i]));
   // Dedupe links within the same space only — allows the same story in both spaces.
@@ -196,14 +256,14 @@ export async function mergeRefreshResults(
     batchCount = 0;
   };
 
-  await mapPool(enabledFeeds, REFRESH_CONCURRENCY, async (feed) => {
+  await mapPool(orderedFeeds, concurrency, async (feed) => {
     if (isFeedPaused(feed, now)) {
       done += 1;
       onProgress?.(done, total);
       return;
     }
 
-    const result = await fetchFeedFn(feed, { allowHttp });
+    const result = await fetchFeedFn(feed, { allowHttp, retryOn403 });
     done += 1;
     onProgress?.(done, total);
 

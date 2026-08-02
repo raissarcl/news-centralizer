@@ -25,31 +25,70 @@ export type FetchFeedResult = {
 
 export type FetchFeedOptions = {
   allowHttp?: boolean;
+  /** Retry once with fallback UA on HTTP 403. Default true for single-feed refresh. */
+  retryOn403?: boolean;
 };
+
+/** Realistic mobile Chrome — many WAFs reject custom reader UAs. */
+export const FEED_USER_AGENT =
+  'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36';
+
+/** Fallback UA for hosts that allowlist crawlers (e.g. Carta Capital / Cloudflare). */
+export const FEED_USER_AGENT_FALLBACK =
+  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+
+const FEED_ACCEPT =
+  'application/rss+xml, application/atom+xml, application/xml, text/xml, */*';
+
+function httpBlockError(status: number): string {
+  if (status === 403) {
+    return 'Site bloqueou o acesso (Cloudflare/HTTP 403)';
+  }
+  if (status === 401 || status === 429) {
+    return `Site bloqueou o acesso (HTTP ${status})`;
+  }
+  return `HTTP ${status}`;
+}
 
 export async function fetchFeed(
   source: FeedSource,
   options: FetchFeedOptions = {},
 ): Promise<FetchFeedResult> {
   const allowHttp = options.allowHttp === true;
-  const headers: Record<string, string> = {
-    Accept:
-      'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
-    'User-Agent': 'NewsCentralizer/1.0',
+  const retryOn403 = options.retryOn403 !== false;
+  const baseHeaders: Record<string, string> = {
+    Accept: FEED_ACCEPT,
+    'User-Agent': FEED_USER_AGENT,
   };
-  if (source.etag) headers['If-None-Match'] = source.etag;
-  if (source.lastModified) headers['If-Modified-Since'] = source.lastModified;
+  if (source.etag) baseHeaders['If-None-Match'] = source.etag;
+  if (source.lastModified) {
+    baseHeaders['If-Modified-Since'] = source.lastModified;
+  }
 
-  const result = await safeFetch(source.url, {
-    headers,
+  let result = await safeFetch(source.url, {
+    headers: baseHeaders,
     validateOptions: { allowHttp },
   });
 
+  if (retryOn403 && !result.ok && result.status === 403) {
+    result = await safeFetch(source.url, {
+      headers: {
+        ...baseHeaders,
+        'User-Agent': FEED_USER_AGENT_FALLBACK,
+      },
+      validateOptions: { allowHttp },
+    });
+  }
+
   if (!result.ok) {
+    const error =
+      typeof result.status === 'number'
+        ? httpBlockError(result.status)
+        : result.error;
     return {
       notModified: false,
       entries: [],
-      error: result.error,
+      error,
     };
   }
 
@@ -74,12 +113,34 @@ export async function fetchFeed(
       publishedAt: entry.publishedAt,
     }));
 
+  let error: string | undefined;
+  if (entries.length === 0) {
+    const looksLikeHtml = /^\s*</.test(result.text)
+      ? /<html[\s>]/i.test(result.text)
+      : false;
+    const hasRawItems =
+      /<item[\s>]/i.test(result.text) || /<entry[\s>]/i.test(result.text);
+    if (looksLikeHtml) {
+      error = /just a moment|cloudflare|cf-browser-verification/i.test(
+        result.text,
+      )
+        ? 'Site bloqueou o acesso (Cloudflare)'
+        : 'Resposta HTML, não é feed RSS/Atom';
+    } else if (!hasRawItems) {
+      error = 'XML sem itens de feed';
+    } else if (rawEntries.length === 0) {
+      error = 'Não foi possível interpretar o XML do feed';
+    } else {
+      error = 'Itens filtrados (datas inválidas)';
+    }
+  }
+
   return {
     notModified: false,
     entries,
     etag: result.etag,
     lastModified: result.lastModified,
-    error: entries.length === 0 ? 'Feed vazio após parse' : undefined,
+    error,
   };
 }
 
@@ -105,7 +166,9 @@ export function applyRetention(
   });
 }
 
-export const REFRESH_CONCURRENCY = 8;
+export const REFRESH_CONCURRENCY = 24;
+/** Lower concurrency for background warm of the inactive space. */
+export const REFRESH_BACKGROUND_CONCURRENCY = 12;
 
 export async function mapPool<T, R>(
   items: T[],

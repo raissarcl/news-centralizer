@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useStoreWithEqualityFn } from 'zustand/traditional';
 import { useFeedsStore, feedsInSpace, foldersInSpace } from '@/store/feeds';
 import { useSettingsStore } from '@/store/settings';
 import { resolveActiveSpaceId } from '@/lib/spaces';
@@ -31,6 +32,32 @@ import {
   type UrlValidationError,
 } from '@/lib/security/urls';
 import type { FeedSource } from '@/types';
+
+/** Ignore lastFetchedAt/etag churn so Fontes stays responsive during refresh. */
+function sourcesListFeedsEqual(a: FeedSource[], b: FeedSource[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.id !== y.id ||
+      x.title !== y.title ||
+      x.url !== y.url ||
+      x.spaceId !== y.spaceId ||
+      x.enabled !== y.enabled ||
+      x.lastError !== y.lastError ||
+      x.refreshPausedUntil !== y.refreshPausedUntil ||
+      x.favicon !== y.favicon ||
+      x.siteUrl !== y.siteUrl ||
+      x.folderIds.length !== y.folderIds.length ||
+      x.folderIds.some((id, j) => id !== y.folderIds[j])
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function urlValidationMessage(error: UrlValidationError): string {
   switch (feedUrlErrorMessage(error)) {
@@ -52,7 +79,11 @@ export default function SourcesScreen() {
   const switchProps = getSwitchProps(tokens);
   const router = useRouter();
   const { addToFolder } = useLocalSearchParams<{ addToFolder?: string }>();
-  const allFeeds = useFeedsStore((s) => s.feeds);
+  const allFeeds = useStoreWithEqualityFn(
+    useFeedsStore,
+    (s) => s.feeds,
+    sourcesListFeedsEqual,
+  );
   const allFolders = useFeedsStore((s) => s.folders);
   const spaces = useFeedsStore((s) => s.spaces);
   const toggleFeedEnabled = useFeedsStore((s) => s.toggleFeedEnabled);

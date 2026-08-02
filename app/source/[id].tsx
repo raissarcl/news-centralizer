@@ -31,7 +31,9 @@ export default function SourceDetailScreen() {
   const folders = useFeedsStore((s) => s.folders);
   const tags = useFeedsStore((s) => s.tags);
   const items = useFeedsStore((s) => s.items);
-  const refreshing = useFeedsStore((s) => s.refreshing);
+  const feedRefreshing = useFeedsStore((s) =>
+    id ? s.refreshingFeedIds.includes(id) : false,
+  );
   const markItemRead = useFeedsStore((s) => s.markItemRead);
   const toggleItemStarred = useFeedsStore((s) => s.toggleItemStarred);
   const assignTagsToFeed = useFeedsStore((s) => s.assignTagsToFeed);
@@ -73,9 +75,9 @@ export default function SourceDetailScreen() {
           onPress={() => void refreshFeed(feed.id)}
           hitSlop={12}
           style={{ paddingHorizontal: 12 }}
-          disabled={refreshing}
+          disabled={feedRefreshing}
         >
-          {refreshing ? (
+          {feedRefreshing ? (
             <ActivityIndicator size="small" color={tokens.primary} />
           ) : (
             <Text style={{ color: tokens.primary, fontSize: 14 }}>
@@ -85,7 +87,7 @@ export default function SourceDetailScreen() {
         </Pressable>
       ),
     });
-  }, [feed, navigation, refreshFeed, refreshing, tokens.primary]);
+  }, [feed, feedRefreshing, navigation, refreshFeed, tokens.primary]);
 
   if (!feed) {
     return (

@@ -33,6 +33,7 @@ import {
   ensureHnFrontpageFeed,
   removeBrokenHnAiFeed,
   removeRetiredCatalogFeeds,
+  rewriteGoogleDevelopersBlogUrl,
 } from './catalogRepairs';
 
 export {
@@ -40,6 +41,20 @@ export {
   mergeEngBlogsIntoBlob,
   removeBrokenHnAiFeed,
 } from './catalogRepairs';
+
+function normalizeRemovedFeedUrls(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string' || !entry.trim()) continue;
+    const n = entry.trim();
+    if (seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out;
+}
 
 function normalizeSettings(raw: Partial<Settings> | undefined): Settings {
   const merged: Settings = { ...DEFAULT_SETTINGS, ...(raw ?? {}) };
@@ -71,6 +86,7 @@ function normalizeSettings(raw: Partial<Settings> | undefined): Settings {
       merged.activeSpaceId.length > 0
         ? merged.activeSpaceId
         : DEFAULT_SETTINGS.activeSpaceId,
+    removedFeedUrls: normalizeRemovedFeedUrls(merged.removedFeedUrls),
   };
 }
 
@@ -306,7 +322,10 @@ export function migrateBlob(raw: unknown): PersistedBlob {
       migrated.feeds,
       DEFAULT_GENERAL_FEEDS_OPML,
       GENERAL_SPACE_ID,
-      { allowHttp: migrated.settings.allowHttpFeeds },
+      {
+        allowHttp: migrated.settings.allowHttpFeeds,
+        removedFeedUrls: migrated.settings.removedFeedUrls,
+      },
     );
     migrated = {
       ...migrated,
@@ -325,7 +344,10 @@ export function migrateBlob(raw: unknown): PersistedBlob {
       migrated.feeds,
       DEFAULT_GENERAL_FEEDS_OPML,
       GENERAL_SPACE_ID,
-      { allowHttp: migrated.settings.allowHttpFeeds },
+      {
+        allowHttp: migrated.settings.allowHttpFeeds,
+        removedFeedUrls: migrated.settings.removedFeedUrls,
+      },
     );
     migrated = {
       ...migrated,
@@ -340,7 +362,10 @@ export function migrateBlob(raw: unknown): PersistedBlob {
       migrated.feeds,
       DEFAULT_FEEDS_OPML,
       COMPUTING_SPACE_ID,
-      { allowHttp: migrated.settings.allowHttpFeeds },
+      {
+        allowHttp: migrated.settings.allowHttpFeeds,
+        removedFeedUrls: migrated.settings.removedFeedUrls,
+      },
     );
     migrated = {
       ...migrated,
@@ -352,6 +377,10 @@ export function migrateBlob(raw: unknown): PersistedBlob {
       },
     };
     migrated = mergeEngBlogsIntoBlob(migrated);
+  }
+
+  if (version < 14) {
+    migrated = rewriteGoogleDevelopersBlogUrl(migrated);
   }
 
   // Always-on catalog repairs (spaces/inboxes + known broken URL rewrites).

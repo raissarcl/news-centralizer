@@ -8,6 +8,7 @@ import { normalizeFeedUrl } from '../items/dedupeItems';
 import { validateFeedUrl } from '../security/urls';
 import type { FeedSource, Folder } from '../../types';
 import { flattenOpmlFeeds, parseOpml } from './index';
+import { feedUrlAliases } from '../feeds/feedUrlAliases';
 
 export const INBOX_FOLDER_NAME = 'Caixa de entrada';
 
@@ -113,6 +114,11 @@ export function buildSeedFromOpml(
   };
 }
 
+export type MergeSeedOptions = SeedUrlOptions & {
+  /** Normalized URLs the user deleted; never re-add these. */
+  removedFeedUrls?: string[];
+};
+
 /**
  * Adds folders/feeds from a seed OPML that are missing by URL.
  * Does not remove or alter existing user feeds.
@@ -122,9 +128,12 @@ export function mergeMissingSeedFeeds(
   existingFeeds: FeedSource[],
   opml: string,
   spaceId: string,
-  urlOptions: SeedUrlOptions,
+  urlOptions: MergeSeedOptions,
 ): { folders: Folder[]; feeds: FeedSource[]; added: number } {
   const seeded = buildSeedFromOpml(opml, spaceId, urlOptions);
+  const removed = new Set(
+    (urlOptions.removedFeedUrls ?? []).map((u) => normalizeFeedUrl(u)),
+  );
   const existingUrls = new Set(
     existingFeeds
       .filter((f) => f.spaceId === spaceId)
@@ -152,7 +161,13 @@ export function mergeMissingSeedFeeds(
   );
 
   for (const seedFeed of seeded.feeds) {
-    if (existingUrls.has(normalizeFeedUrl(seedFeed.url))) continue;
+    const normalized = normalizeFeedUrl(seedFeed.url);
+    const aliases = feedUrlAliases(normalized);
+    if (
+      aliases.some((u) => existingUrls.has(u) || removed.has(u))
+    ) {
+      continue;
+    }
 
     const folderNames = seedFeed.folderIds
       .map((id) => seedFolderNameById.get(id))
@@ -169,7 +184,7 @@ export function mergeMissingSeedFeeds(
       id: createId('feed'),
       folderIds,
     });
-    existingUrls.add(normalizeFeedUrl(seedFeed.url));
+    for (const alias of aliases) existingUrls.add(alias);
     added += 1;
   }
 

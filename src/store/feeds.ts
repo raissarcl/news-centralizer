@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { InteractionManager } from 'react-native';
 import { DEFAULT_FEEDS_OPML } from '../data/defaultFeedsOpml';
 import { DEFAULT_GENERAL_FEEDS_OPML } from '../data/defaultGeneralFeedsOpml';
 import { faviconUrlForFeed } from '../lib/favicon';
@@ -14,10 +15,9 @@ import {
 } from '../lib/feeds/feedFolders';
 import {
   applyRefreshOntoCurrent,
-  isFeedFresh,
-  isFeedPaused,
   mergeRefreshResults,
   type RefreshFeedBatch,
+  shouldRefreshFeed,
 } from '../lib/feeds/refreshMerge';
 import {
   filterItemsForFeed,
@@ -25,6 +25,8 @@ import {
   selectVisibleItems,
 } from '../lib/feeds/selectItems';
 import { createId } from '../lib/id';
+import { normalizeFeedUrl } from '../lib/items/dedupeItems';
+import { feedUrlAliases } from '../lib/feeds/feedUrlAliases';
 import { sortItemsByPublishedDesc } from '../lib/items/sortItems';
 import { applyOpmlImport } from '../lib/opml/importFeeds';
 import {
@@ -33,7 +35,11 @@ import {
   ensureSpaceInboxes,
 } from '../lib/opml/seedFromOpml';
 import type { OpmlFeedInput } from '../lib/opml';
-import { applyRetention } from '../lib/rss/fetchFeed';
+import {
+  applyRetention,
+  REFRESH_BACKGROUND_CONCURRENCY,
+  REFRESH_CONCURRENCY,
+} from '../lib/rss/fetchFeed';
 import {
   capFeedInputs,
   filterValidFeedInputs,
@@ -69,7 +75,13 @@ export {
   mergeRefreshResults,
   isFeedFresh,
   isFeedPaused,
+  isFeedTooRecentForForce,
+  shouldRefreshFeed,
+  sortFeedsByRefreshPriority,
+  refreshPriorityScore,
   refreshStateAfterFetch,
+  FEED_FORCE_MIN_AGE_MS,
+  FEED_FRESH_MS,
 } from '../lib/feeds/refreshMerge';
 
 async function afterDataChange(): Promise<void> {
@@ -122,6 +134,53 @@ function feedUrlOptions() {
   return { allowHttp: useSettingsStore.getState().settings.allowHttpFeeds };
 }
 
+function otherSpaceId(activeSpaceId: string, spaces: Space[]): string | null {
+  if (isGeneralOnly()) return null;
+  const other = spaces.find((s) => s.id !== activeSpaceId);
+  return other?.id ?? null;
+}
+
+/** Record a deleted feed URL so seed merges do not restore it. */
+function rememberRemovedFeedUrl(url: string): void {
+  const normalized = normalizeFeedUrl(url);
+  if (!normalized) return;
+  const settings = useSettingsStore.getState().settings;
+  const toAdd = feedUrlAliases(normalized).filter(
+    (u) => !settings.removedFeedUrls.includes(u),
+  );
+  if (toAdd.length === 0) return;
+  useSettingsStore.setState({
+    settings: {
+      ...settings,
+      removedFeedUrls: [...settings.removedFeedUrls, ...toAdd],
+    },
+  });
+}
+
+/** Allow a URL to be seeded/added again after the user re-adds it. */
+function clearRemovedFeedUrls(urls: string[]): void {
+  const toClear = new Set<string>();
+  for (const url of urls) {
+    const normalized = normalizeFeedUrl(url);
+    if (!normalized) continue;
+    for (const alias of feedUrlAliases(normalized)) toClear.add(alias);
+  }
+  if (toClear.size === 0) return;
+  const settings = useSettingsStore.getState().settings;
+  const next = settings.removedFeedUrls.filter((u) => !toClear.has(u));
+  if (next.length === settings.removedFeedUrls.length) return;
+  useSettingsStore.setState({
+    settings: { ...settings, removedFeedUrls: next },
+  });
+}
+
+function clearRemovedFeedUrl(url: string): void {
+  clearRemovedFeedUrls([url]);
+}
+
+/** Prevent overlapping background warms of the inactive space. */
+let backgroundWarmInFlight = false;
+
 export type RefreshProgress = {
   done: number;
   total: number;
@@ -135,6 +194,8 @@ type FeedsState = {
   tags: Tag[];
   hydrated: boolean;
   refreshing: boolean;
+  /** Feed IDs currently in-flight during refreshAll / refreshFeed. */
+  refreshingFeedIds: string[];
   refreshProgress: RefreshProgress | null;
   hydrate: () => Promise<void>;
   persist: (settings?: Settings) => Promise<void>;
@@ -143,7 +204,11 @@ type FeedsState = {
   setActiveSpaceId: (spaceId: string) => Promise<void>;
   refreshAll: (options?: {
     force?: boolean;
+    /** Skip background warm of the other space (used by the warmer itself). */
+    skipWarmOther?: boolean;
   }) => Promise<{ newCount: number; newHeadlines: string[] }>;
+  /** Quiet refresh of a space without toggling global refreshing UI. */
+  warmSpaceInBackground: (spaceId: string) => Promise<void>;
   refreshFeed: (
     feedId: string,
   ) => Promise<{ newCount: number; newHeadlines: string[] }>;
@@ -201,6 +266,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
   tags: [],
   hydrated: false,
   refreshing: false,
+  refreshingFeedIds: [],
   refreshProgress: null,
 
   hydrate: async () => {
@@ -288,41 +354,119 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     }
   },
 
+  warmSpaceInBackground: async (spaceId) => {
+    if (backgroundWarmInFlight) return;
+    if (isGeneralOnly()) return;
+    const state = get();
+    if (!state.spaces.some((s) => s.id === spaceId)) return;
+
+    const now = Date.now();
+    const enabledFeeds = state.feeds.filter(
+      (f) => f.spaceId === spaceId && shouldRefreshFeed(f, false, now),
+    );
+    if (enabledFeeds.length === 0) return;
+
+    backgroundWarmInFlight = true;
+    const retentionDays = useSettingsStore.getState().settings.retentionDays;
+    let applyQueue: Promise<void> = Promise.resolve();
+    const onFeedBatch = (batch: RefreshFeedBatch) => {
+      applyQueue = applyQueue.then(
+        () =>
+          new Promise<void>((resolve) => {
+            InteractionManager.runAfterInteractions(() => {
+              const current = get();
+              const { feeds, items } = applyRefreshOntoCurrent(
+                current.feeds,
+                current.items,
+                batch.feedUpdates,
+                batch.newItems,
+                batch.imagePatches,
+                current.folders,
+                retentionDays,
+              );
+              set({ feeds, items });
+              resolve();
+            });
+          }),
+      );
+    };
+
+    try {
+      await mergeRefreshResults(state.feeds, enabledFeeds, state.items, {
+        allowHttp: feedUrlOptions().allowHttp,
+        now,
+        concurrency: REFRESH_BACKGROUND_CONCURRENCY,
+        retryOn403: false,
+        onFeedBatch,
+      });
+      await applyQueue;
+      persistAfterRefresh();
+    } finally {
+      backgroundWarmInFlight = false;
+    }
+  },
+
   refreshAll: async (options) => {
     const force = options?.force === true;
+    const skipWarmOther = options?.skipWarmOther === true;
     const state = get();
     const activeSpaceId = resolveActiveSpaceFromStores();
     const now = Date.now();
-    const enabledFeeds = state.feeds.filter((f) => {
-      if (f.spaceId !== activeSpaceId || !f.enabled || isFeedPaused(f, now)) {
-        return false;
+    const enabledFeeds = state.feeds.filter(
+      (f) => f.spaceId === activeSpaceId && shouldRefreshFeed(f, force, now),
+    );
+    if (enabledFeeds.length === 0) {
+      if (!skipWarmOther) {
+        const other = otherSpaceId(activeSpaceId, state.spaces);
+        if (other) void get().warmSpaceInBackground(other);
       }
-      if (!force && isFeedFresh(f, now)) return false;
-      return true;
-    });
-    if (enabledFeeds.length === 0) return { newCount: 0, newHeadlines: [] };
+      return { newCount: 0, newHeadlines: [] };
+    }
 
+    const inFlightIds = enabledFeeds.map((f) => f.id);
     set({
       refreshing: true,
+      refreshingFeedIds: inFlightIds,
       refreshProgress: { done: 0, total: enabledFeeds.length },
     });
 
     const retentionDays = useSettingsStore.getState().settings.retentionDays;
     let applyQueue: Promise<void> = Promise.resolve();
+    let isFirstBatch = true;
     const onFeedBatch = (batch: RefreshFeedBatch) => {
-      applyQueue = applyQueue.then(() => {
-        const current = get();
-        const { feeds, items } = applyRefreshOntoCurrent(
-          current.feeds,
-          current.items,
-          batch.feedUpdates,
-          batch.newItems,
-          batch.imagePatches,
-          current.folders,
-          retentionDays,
-        );
-        set({ feeds, items });
-      });
+      const first = isFirstBatch;
+      isFirstBatch = false;
+      applyQueue = applyQueue.then(
+        () =>
+          new Promise<void>((resolve) => {
+            const apply = () => {
+              const current = get();
+              const completedIds = [...batch.feedUpdates.keys()];
+              const { feeds, items } = applyRefreshOntoCurrent(
+                current.feeds,
+                current.items,
+                batch.feedUpdates,
+                batch.newItems,
+                batch.imagePatches,
+                current.folders,
+                retentionDays,
+              );
+              set({
+                feeds,
+                items,
+                refreshingFeedIds: current.refreshingFeedIds.filter(
+                  (id) => !completedIds.includes(id),
+                ),
+              });
+              resolve();
+            };
+            if (first) {
+              apply();
+            } else {
+              InteractionManager.runAfterInteractions(apply);
+            }
+          }),
+      );
     };
 
     const { newCountBySpace, newHeadlinesBySpace } = await mergeRefreshResults(
@@ -332,6 +476,8 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       {
         allowHttp: feedUrlOptions().allowHttp,
         now,
+        concurrency: REFRESH_CONCURRENCY,
+        retryOn403: false,
         onProgress: createThrottledProgress((done, total) =>
           set({ refreshProgress: { done, total } }),
         ),
@@ -342,9 +488,15 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     await applyQueue;
     set({
       refreshing: false,
+      refreshingFeedIds: [],
       refreshProgress: null,
     });
     persistAfterRefresh();
+
+    if (!skipWarmOther) {
+      const other = otherSpaceId(activeSpaceId, get().spaces);
+      if (other) void get().warmSpaceInBackground(other);
+    }
 
     return {
       newCount: newCountBySpace[activeSpaceId] ?? 0,
@@ -359,7 +511,11 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     if (!feed || !feed.enabled || feed.spaceId !== activeSpaceId)
       return { newCount: 0, newHeadlines: [] as string[] };
 
-    set({ refreshing: true, refreshProgress: { done: 0, total: 1 } });
+    set({
+      refreshing: true,
+      refreshingFeedIds: [feedId],
+      refreshProgress: { done: 0, total: 1 },
+    });
     const retentionDays = useSettingsStore.getState().settings.retentionDays;
     let applyQueue: Promise<void> = Promise.resolve();
     const onFeedBatch = (batch: RefreshFeedBatch) => {
@@ -374,7 +530,11 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
           current.folders,
           retentionDays,
         );
-        set({ feeds, items });
+        set({
+          feeds,
+          items,
+          refreshingFeedIds: [],
+        });
       });
     };
 
@@ -384,13 +544,19 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       state.items,
       {
         allowHttp: feedUrlOptions().allowHttp,
+        concurrency: 1,
+        retryOn403: true,
         onProgress: () => set({ refreshProgress: { done: 1, total: 1 } }),
         onFeedBatch,
       },
     );
 
     await applyQueue;
-    set({ refreshing: false, refreshProgress: null });
+    set({
+      refreshing: false,
+      refreshingFeedIds: [],
+      refreshProgress: null,
+    });
     persistAfterRefresh();
     return {
       newCount: newCountBySpace[feed.spaceId] ?? 0,
@@ -573,6 +739,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
           f.id === existing.id ? addFeedToFolder(f, input.folderId) : f,
         ),
       });
+      clearRemovedFeedUrl(href);
       await persistApp();
       return 'ok';
     }
@@ -589,15 +756,20 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       enabled: true,
     };
     set({ feeds: [...get().feeds, feed] });
+    clearRemovedFeedUrl(href);
     await persistApp();
     return 'ok';
   },
 
   removeFeed: async (feedId) => {
+    const removed = get().feeds.find((f) => f.id === feedId);
     set({
       feeds: get().feeds.filter((f) => f.id !== feedId),
       items: get().items.filter((i) => i.feedId !== feedId),
     });
+    if (removed) {
+      rememberRemovedFeedUrl(removed.url);
+    }
     await persistApp();
   },
 
@@ -754,6 +926,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       items: next.items,
       tags: next.tags,
     });
+    clearRemovedFeedUrls(valid.map((f) => f.url));
     await persistApp();
     return { added: next.added, skipped };
   },

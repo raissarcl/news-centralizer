@@ -100,9 +100,9 @@ cd ..
 
 if !GRADLE_ERR! neq 0 (
   echo.
-  echo ERROR: Gradle failed.
+  echo ERROR: Gradle failed. Scroll up for the real Metro/Gradle error.
   echo.
-  echo Fix for "260 characters" on Windows:
+  echo If the log mentions path length / "260 characters" / CMake:
   echo   1. Admin CMD: mklink /J C:\nc "%ROOT%"
   echo      Then run this script again.
   echo   2. Admin PowerShell + reboot:

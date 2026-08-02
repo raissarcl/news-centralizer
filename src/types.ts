@@ -67,6 +67,8 @@ export type Settings = {
   seeded: boolean;
   seededGeneral: boolean;
   activeSpaceId: string;
+  /** Normalized feed URLs the user deleted; seed merges must not restore them. */
+  removedFeedUrls: string[];
 };
 
 export type PersistedBlob = {
@@ -79,7 +81,7 @@ export type PersistedBlob = {
   settings: Settings;
 };
 
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -93,6 +95,7 @@ export const DEFAULT_SETTINGS: Settings = {
   seeded: false,
   seededGeneral: false,
   activeSpaceId: isGeneralOnly() ? 'general' : 'computing',
+  removedFeedUrls: [],
 };
 
 export type TimelineFilter = 'all' | 'unread' | 'read' | 'starred';

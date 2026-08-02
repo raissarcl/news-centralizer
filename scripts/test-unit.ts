@@ -14,7 +14,11 @@ import {
   mergeRefreshResults,
   refreshStateAfterFetch,
   FEED_FRESH_MS,
+  FEED_FORCE_MIN_AGE_MS,
   REFRESH_FAIL_THRESHOLD,
+  shouldRefreshFeed,
+  sortFeedsByRefreshPriority,
+  refreshPriorityScore,
 } from '../src/lib/feeds/refreshMerge';
 import {
   addFeedToFolder,
@@ -28,7 +32,13 @@ import { applyOpmlImport } from '../src/lib/opml/importFeeds';
 import { mergeMissingSeedFeeds } from '../src/lib/opml/seedFromOpml';
 import { DEFAULT_GENERAL_FEEDS_OPML } from '../src/data/defaultGeneralFeedsOpml';
 import { migrateBlob, mergeEngBlogsIntoBlob } from '../src/store/migrate';
+import {
+  GOOGLE_DEVELOPERS_BLOG_OLD_URL,
+  GOOGLE_DEVELOPERS_BLOG_URL,
+} from '../src/store/catalogRepairs';
+import { normalizeFeedUrl } from '../src/lib/items/dedupeItems';
 import type { FeedItem, FeedSource, Folder, PersistedBlob } from '../src/types';
+import { DEFAULT_SETTINGS } from '../src/types';
 
 function item(
   id: string,
@@ -281,10 +291,24 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   </item></channel></rss>`;
   const entries = parseFeedXml(rssXml);
   assert.equal(entries.length, 1);
-  assert.equal(
-    entries[0].link,
-    'https://www1.folha.uol.com.br/poder/2026/07/exemplo.shtml',
-  );
+  assert.equal(entries[0].link, 'https://www1.folha.uol.com.br/poder/2026/07/exemplo.shtml');
+}
+
+// parseFeedXml keeps items without pubDate (channel lastBuildDate / synthetic)
+{
+  const rssXml = `<?xml version="1.0"?><rss><channel>
+    <lastBuildDate>Sun, 02 Aug 2026 12:00:00 GMT</lastBuildDate>
+    <item>
+      <title>No date item</title>
+      <link>https://example.com/undated</link>
+      <guid>undated-1</guid>
+      <description>Hello</description>
+    </item>
+  </channel></rss>`;
+  const entries = parseFeedXml(rssXml);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].title, 'No date item');
+  assert.ok(entries[0].publishedAt.length > 0);
 }
 
 // decodeFeedBody respects XML encoding declaration (Folha ISO-8859-1)
@@ -328,14 +352,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     folders: [],
     tags: [],
     settings: {
-      theme: 'system',
-      locale: 'pt-BR',
-      retentionDays: 30,
-      refreshOnOpen: true,
-      notifyOnNewItems: false,
-      allowHttpFeeds: false,
-      rssHubAcknowledged: false,
-      lastExportAt: null,
+      ...DEFAULT_SETTINGS,
       seeded: false,
       seededGeneral: false,
       activeSpaceId: 'computing',
@@ -356,8 +373,9 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     tags: [],
     settings: {},
   });
-  assert.equal(migrated.schemaVersion, 13);
+  assert.equal(migrated.schemaVersion, 14);
   assert.equal(migrated.settings.seededGeneral, true);
+  assert.ok(Array.isArray(migrated.settings.removedFeedUrls));
   assert.ok(migrated.folders.some((f) => f.name === 'Cultura pop'));
   assert.equal(
     migrated.folders.find((f) => f.id === 'inbox:computing')?.name,
@@ -562,6 +580,38 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.ok(merged.feeds.some((f) => f.id === 'cnn'));
 }
 
+// mergeMissingSeedFeeds skips tombstoned URLs
+{
+  const spaceId = 'general';
+  const contigoUrl = 'https://www.contigo.com.br/feed/';
+  const merged = mergeMissingSeedFeeds(
+    [
+      {
+        id: 'general-portais',
+        name: 'Portais',
+        spaceId,
+        sortOrder: 0,
+      },
+    ],
+    [
+      {
+        ...feed('cnn', ['general-portais']),
+        spaceId,
+        url: 'https://www.cnnbrasil.com.br/feed/',
+        title: 'CNN Brasil',
+      },
+    ],
+    DEFAULT_GENERAL_FEEDS_OPML,
+    spaceId,
+    {
+      allowHttp: false,
+      removedFeedUrls: [normalizeFeedUrl(contigoUrl)],
+    },
+  );
+  assert.ok(!merged.feeds.some((f) => /contigo\.com\.br/i.test(f.url)));
+  assert.ok(merged.feeds.some((f) => f.id === 'cnn'));
+}
+
 // migrate v11 merges missing general seed feeds (Cultura pop)
 {
   const migrated = migrateBlob({
@@ -625,6 +675,84 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.ok(migrated.feeds.some((f) => f.title === 'web.dev'));
   assert.ok(migrated.feeds.some((f) => f.id === 'lobsters'));
   assert.ok(!migrated.feeds.some((f) => /dev\.to\/feed/i.test(f.url)));
+}
+
+// migrate v14 rewrites Google Developers Blog URL
+{
+  const migrated = migrateBlob({
+    schemaVersion: 13,
+    feeds: [
+      {
+        id: 'gdb',
+        title: 'Google Developers Blog',
+        url: 'https://developers.googleblog.com/feeds/posts/default',
+        spaceId: 'computing',
+        folderIds: ['eng-blogs'],
+        tagIds: [],
+        enabled: true,
+      },
+    ],
+    items: [],
+    folders: [
+      {
+        id: 'eng-blogs',
+        name: 'Eng Blogs',
+        spaceId: 'computing',
+        sortOrder: 0,
+      },
+    ],
+    tags: [],
+    settings: { seeded: true },
+  });
+  const gdb = migrated.feeds.find((f) => f.id === 'gdb');
+  assert.equal(gdb?.url, GOOGLE_DEVELOPERS_BLOG_URL);
+  assert.equal(
+    normalizeFeedUrl(gdb!.url),
+    normalizeFeedUrl(GOOGLE_DEVELOPERS_BLOG_URL),
+  );
+}
+
+// migrate does not restore tombstoned Google Developers Blog
+{
+  const migrated = migrateBlob({
+    schemaVersion: 12,
+    feeds: [
+      {
+        id: 'lobsters',
+        title: 'Lobsters',
+        url: 'https://lobste.rs/rss',
+        spaceId: 'computing',
+        folderIds: ['comunidade'],
+        tagIds: [],
+        enabled: true,
+      },
+    ],
+    items: [],
+    folders: [
+      {
+        id: 'comunidade',
+        name: 'Comunidade',
+        spaceId: 'computing',
+        sortOrder: 0,
+      },
+    ],
+    tags: [],
+    settings: {
+      seeded: true,
+      removedFeedUrls: [
+        GOOGLE_DEVELOPERS_BLOG_OLD_URL,
+        normalizeFeedUrl(GOOGLE_DEVELOPERS_BLOG_URL),
+      ],
+    },
+  });
+  assert.ok(
+    !migrated.feeds.some(
+      (f) =>
+        normalizeFeedUrl(f.url) === GOOGLE_DEVELOPERS_BLOG_OLD_URL ||
+        normalizeFeedUrl(f.url) === normalizeFeedUrl(GOOGLE_DEVELOPERS_BLOG_URL),
+    ),
+  );
+  assert.ok(migrated.feeds.some((f) => f.id === 'lobsters'));
 }
 
 // migrate v6 removes HN AI feed
@@ -746,6 +874,70 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   errored.lastFetchedAt = new Date(now - 1000).toISOString();
   errored.lastError = 'network';
   assert.equal(isFeedFresh(errored, now), false);
+}
+
+// soft force skips feeds fetched within FEED_FORCE_MIN_AGE_MS
+{
+  const now = Date.now();
+  const recent = feed('recent');
+  recent.lastFetchedAt = new Date(now - 30_000).toISOString();
+  assert.equal(shouldRefreshFeed(recent, true, now), false);
+  assert.equal(shouldRefreshFeed(recent, false, now), false);
+
+  const softStale = feed('soft-stale');
+  softStale.lastFetchedAt = new Date(
+    now - FEED_FORCE_MIN_AGE_MS - 1,
+  ).toISOString();
+  assert.equal(shouldRefreshFeed(softStale, true, now), true);
+  // Still fresh for non-force (15 min window)
+  assert.equal(shouldRefreshFeed(softStale, false, now), false);
+
+  const erroredSoft = feed('err-soft');
+  erroredSoft.lastFetchedAt = new Date(now - 10_000).toISOString();
+  erroredSoft.lastError = 'HTTP 403';
+  assert.equal(shouldRefreshFeed(erroredSoft, true, now), true);
+}
+
+// sortFeedsByRefreshPriority: healthy+etag before errored
+{
+  const withEtag = { ...feed('ok'), etag: '"abc"', lastError: undefined };
+  const plain = { ...feed('plain'), lastError: undefined };
+  const erroredPri = {
+    ...feed('bad'),
+    lastError: 'timeout',
+    refreshFailCount: 2,
+  };
+  const ordered = sortFeedsByRefreshPriority([erroredPri, plain, withEtag]);
+  assert.equal(ordered[0].id, 'ok');
+  assert.equal(ordered[1].id, 'plain');
+  assert.equal(ordered[2].id, 'bad');
+  assert.ok(refreshPriorityScore(withEtag) < refreshPriorityScore(erroredPri));
+}
+
+// mergeRefreshResults passes retryOn403 to fetchFeedFn
+async function testRetryOn403Option() {
+  const seen: boolean[] = [];
+  await mergeRefreshResults([feed('a')], [feed('a')], [], {
+    allowHttp: false,
+    retryOn403: false,
+    fetchFeedFn: async (_source, options) => {
+      seen.push(options?.retryOn403 === true);
+      return { notModified: true, entries: [] };
+    },
+  });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0], false);
+
+  seen.length = 0;
+  await mergeRefreshResults([feed('a')], [feed('a')], [], {
+    allowHttp: false,
+    retryOn403: true,
+    fetchFeedFn: async (_source, options) => {
+      seen.push(options?.retryOn403 === true);
+      return { notModified: true, entries: [] };
+    },
+  });
+  assert.equal(seen[0], true);
 }
 
 // mergeRefreshResults: space-scoped link dedupe + injected fetch
@@ -883,6 +1075,7 @@ async function testMergeRefreshResults() {
 }
 
 void testMergeRefreshResults()
+  .then(() => testRetryOn403Option())
   .then(() => {
     console.log('All unit tests passed.');
   })

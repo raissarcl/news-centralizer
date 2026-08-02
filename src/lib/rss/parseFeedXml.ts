@@ -151,18 +151,28 @@ function extractImageUrl(
 
 function parseAtomFromDoc(doc: Record<string, unknown>): RawFeedEntry[] {
   const feed = (doc.feed ?? doc['atom:feed']) as
-    Record<string, unknown> | undefined;
+    | Record<string, unknown>
+    | undefined;
   if (!feed) return [];
 
+  const channelFallback =
+    parsePublishedAt(feed.updated ?? feed.published) ?? undefined;
+  const now = Date.now();
+
   return asArray(feed.entry)
-    .map((entry) => {
+    .map((entry, index) => {
       const e = entry as Record<string, unknown>;
       const link = atomLink(e);
       const guid = textValue(e.id) || link;
       const title = textValue(e.title) || 'Sem título';
       const summaryRaw =
         textValue(e.summary) || textValue(e.content) || textValue(e.subtitle);
-      const publishedAt = parsePublishedAt(e.updated ?? e.published);
+      const dateRaw = e.updated ?? e.published;
+      const hasDate = textValue(dateRaw).length > 0;
+      const publishedAt = hasDate
+        ? parsePublishedAt(dateRaw)
+        : (channelFallback ??
+          new Date(now - index * 60_000).toISOString());
       if (!publishedAt) return null;
       const imageUrl = extractImageUrl(e, summaryRaw);
       return normalizeEntry({
@@ -182,8 +192,14 @@ function parseRssFromDoc(doc: Record<string, unknown>): RawFeedEntry[] {
   const channel = rss?.channel as Record<string, unknown> | undefined;
   if (!channel) return [];
 
+  const channelFallback =
+    parsePublishedAt(
+      channel.lastBuildDate ?? channel.pubDate ?? channel.updated,
+    ) ?? undefined;
+  const now = Date.now();
+
   return asArray(channel.item)
-    .map((item) => {
+    .map((item, index) => {
       const i = item as Record<string, unknown>;
       const link = textValue(i.link) || textValue(i['atom:link']);
       const guid = textValue(i.guid) || textValue(i.id) || link;
@@ -192,9 +208,13 @@ function parseRssFromDoc(doc: Record<string, unknown>): RawFeedEntry[] {
         textValue(i.description) ||
         textValue(i['content:encoded']) ||
         textValue(i.summary);
-      const publishedAt = parsePublishedAt(
-        i.pubDate ?? i.published ?? i.updated ?? i['dc:date'] ?? i.date,
-      );
+      const dateRaw =
+        i.pubDate ?? i.published ?? i.updated ?? i['dc:date'] ?? i.date;
+      const hasDate = textValue(dateRaw).length > 0;
+      const publishedAt = hasDate
+        ? parsePublishedAt(dateRaw)
+        : (channelFallback ??
+          new Date(now - index * 60_000).toISOString());
       if (!publishedAt) return null;
       const imageUrl = extractImageUrl(i, summaryRaw);
       return normalizeEntry({
@@ -215,11 +235,19 @@ function parseRssFromDoc(doc: Record<string, unknown>): RawFeedEntry[] {
  */
 function parseRdfFromDoc(doc: Record<string, unknown>): RawFeedEntry[] {
   const rdf = (doc.RDF ?? doc['rdf:RDF']) as
-    Record<string, unknown> | undefined;
+    | Record<string, unknown>
+    | undefined;
   if (!rdf) return [];
 
+  const channel = rdf.channel as Record<string, unknown> | undefined;
+  const channelFallback =
+    parsePublishedAt(
+      channel?.['dc:date'] ?? channel?.date ?? channel?.lastBuildDate,
+    ) ?? undefined;
+  const now = Date.now();
+
   return asArray(rdf.item)
-    .map((item) => {
+    .map((item, index) => {
       const i = item as Record<string, unknown>;
       const about =
         textValue(i['@_about']) ||
@@ -233,9 +261,13 @@ function parseRdfFromDoc(doc: Record<string, unknown>): RawFeedEntry[] {
         textValue(i['content:encoded']) ||
         textValue(i.content) ||
         textValue(i.summary);
-      const publishedAt = parsePublishedAt(
-        i['dc:date'] ?? i.date ?? i.pubDate ?? i.published ?? i.updated,
-      );
+      const dateRaw =
+        i['dc:date'] ?? i.date ?? i.pubDate ?? i.published ?? i.updated;
+      const hasDate = textValue(dateRaw).length > 0;
+      const publishedAt = hasDate
+        ? parsePublishedAt(dateRaw)
+        : (channelFallback ??
+          new Date(now - index * 60_000).toISOString());
       if (!publishedAt) return null;
       const imageUrl = extractImageUrl(i, summaryRaw);
       return normalizeEntry({

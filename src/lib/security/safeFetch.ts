@@ -2,7 +2,7 @@ import { decodeFeedBody } from '../rss/decodeFeedBody';
 import { validateFeedUrl, type FeedUrlOptions } from './urls';
 
 export const FETCH_LIMITS = {
-  timeoutMs: 20_000,
+  timeoutMs: 8_000,
   maxBytes: 3 * 1024 * 1024,
   maxRedirects: 3,
 } as const;
