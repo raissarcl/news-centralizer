@@ -227,15 +227,11 @@ export default function SettingsScreen() {
 
       <Section title={t.settingsSectionAdvanced} tokens={tokens}>
         <SettingRow
-          title={t.allowHttpFeeds}
-          hint={t.allowHttpFeedsHint}
+          title={t.httpFeedsBlockedTitle}
+          hint={t.httpFeedsBlockedHint}
           tokens={tokens}
         >
-          <Switch
-            value={settings.allowHttpFeeds}
-            onValueChange={(v) => void update({ allowHttpFeeds: v })}
-            {...switchProps}
-          />
+          <Text style={{ color: tokens.textMuted, fontSize: 13 }}>HTTPS</Text>
         </SettingRow>
       </Section>
     </ScrollView>

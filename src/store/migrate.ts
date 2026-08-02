@@ -9,7 +9,8 @@ import {
   type Space,
   type Tag,
 } from '../types';
-import { validateFeedUrl } from '../lib/security/urls';
+import { validateFeedUrl, validateItemLink } from '../lib/security/urls';
+import { IMPORT_LIMITS } from '../lib/security/importLimits';
 import { sortItemsByPublishedDesc } from '../lib/items/sortItems';
 import {
   inboxFolderId,
@@ -102,6 +103,12 @@ function normalizeSpace(raw: unknown): Space | null {
   };
 }
 
+function optionalHttpUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  const validated = validateItemLink(raw.trim());
+  return validated.ok ? validated.url.href : undefined;
+}
+
 function normalizeFeed(raw: unknown, allowHttp: boolean): FeedSource | null {
   if (!raw || typeof raw !== 'object') return null;
   const x = raw as Record<string, unknown>;
@@ -125,8 +132,8 @@ function normalizeFeed(raw: unknown, allowHttp: boolean): FeedSource | null {
     id: x.id,
     title: typeof x.title === 'string' ? x.title : x.url,
     url: x.url,
-    siteUrl: typeof x.siteUrl === 'string' ? x.siteUrl : undefined,
-    favicon: typeof x.favicon === 'string' ? x.favicon : undefined,
+    siteUrl: optionalHttpUrl(x.siteUrl),
+    favicon: optionalHttpUrl(x.favicon),
     spaceId,
     folderIds: normalizeFeedFolderIds(rawFolderIds, spaceId),
     tagIds: Array.isArray(x.tagIds)
@@ -167,7 +174,7 @@ function normalizeItem(raw: unknown): FeedItem | null {
     title: x.title,
     link: x.link,
     summary: typeof x.summary === 'string' ? x.summary : undefined,
-    imageUrl: typeof x.imageUrl === 'string' ? x.imageUrl : undefined,
+    imageUrl: optionalHttpUrl(x.imageUrl),
     publishedAt:
       typeof x.publishedAt === 'string'
         ? x.publishedAt
@@ -248,9 +255,13 @@ export function migrateBlob(raw: unknown): PersistedBlob {
     ? blob.feeds
         .map((f) => normalizeFeed(f, settings.allowHttpFeeds))
         .filter((f): f is FeedSource => f !== null)
+        .slice(0, IMPORT_LIMITS.maxBackupFeeds)
     : [];
   const items = Array.isArray(blob.items)
-    ? blob.items.map(normalizeItem).filter((i): i is FeedItem => i !== null)
+    ? blob.items
+        .map(normalizeItem)
+        .filter((i): i is FeedItem => i !== null)
+        .slice(0, IMPORT_LIMITS.maxBackupItems)
     : [];
   const folders = Array.isArray(blob.folders)
     ? blob.folders.map(normalizeFolder).filter((f): f is Folder => f !== null)

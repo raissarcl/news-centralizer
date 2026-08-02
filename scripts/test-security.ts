@@ -7,6 +7,7 @@ import {
 } from '../src/lib/security/urls';
 import { filterValidFeedInputs } from '../src/lib/security/importLimits';
 import { parseFeedXml, PARSE_LIMITS } from '../src/lib/rss/parseFeedXml';
+import { migrateBlob } from '../src/store/migrate';
 
 function testUrls() {
   assert.equal(validateFeedUrl('https://example.com/feed').ok, true);
@@ -20,9 +21,18 @@ function testUrls() {
   assert.equal(validateFeedUrl('https://192.168.1.1/feed').ok, false);
   assert.equal(validateFeedUrl('https://localhost/feed').ok, false);
   assert.equal(validateFeedUrl('https://user:pass@example.com/feed').ok, false);
+  assert.equal(validateFeedUrl('https://127.0.0.1/feed').ok, false);
+  assert.equal(validateFeedUrl('https://169.254.169.254/latest').ok, false);
+  assert.equal(
+    validateFeedUrl('https://metadata.google.internal/').ok,
+    false,
+  );
+  assert.equal(validateFeedUrl('https://2130706433/feed').ok, false);
+  assert.equal(validateFeedUrl('https://[::ffff:127.0.0.1]/feed').ok, false);
 
   assert.equal(isPrivateHost('127.0.0.1'), true);
   assert.equal(isPrivateHost('10.0.0.1'), true);
+  assert.equal(isPrivateHost('::ffff:192.168.0.1'), true);
   assert.equal(isPrivateHost('example.com'), false);
 
   assert.equal(validateItemLink('https://example.com/article').ok, true);
@@ -71,7 +81,40 @@ function testParseLimits() {
   assert.equal(parsed.length, PARSE_LIMITS.maxEntries);
 }
 
+function testBackupMediaUrls() {
+  const blob = migrateBlob({
+    schemaVersion: 14,
+    spaces: [],
+    folders: [],
+    tags: [],
+    settings: {},
+    feeds: [
+      {
+        id: 'f1',
+        title: 'Ok',
+        url: 'https://example.com/feed',
+        favicon: 'javascript:alert(1)',
+        siteUrl: 'https://192.168.0.1/',
+      },
+    ],
+    items: [
+      {
+        id: 'i1',
+        feedId: 'f1',
+        title: 'T',
+        link: 'https://example.com/a',
+        imageUrl: 'https://127.0.0.1/tracker.gif',
+        publishedAt: '2024-01-01T00:00:00.000Z',
+      },
+    ],
+  });
+  assert.equal(blob.feeds[0]?.favicon, undefined);
+  assert.equal(blob.feeds[0]?.siteUrl, undefined);
+  assert.equal(blob.items[0]?.imageUrl, undefined);
+}
+
 testUrls();
 testImportFilter();
 testParseLimits();
+testBackupMediaUrls();
 console.log('security tests OK');

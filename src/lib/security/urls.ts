@@ -7,7 +7,8 @@ export type UrlValidationError =
   | 'empty_host';
 
 export type UrlValidationResult =
-  { ok: true; url: URL } | { ok: false; error: UrlValidationError };
+  | { ok: true; url: URL }
+  | { ok: false; error: UrlValidationError };
 
 export type FeedUrlOptions = {
   allowHttp?: boolean;
@@ -28,6 +29,14 @@ const BLOCKED_SCHEMES = new Set([
   'vbscript:',
 ]);
 
+/** Cloud / link-local metadata endpoints commonly used in SSRF. */
+const BLOCKED_HOSTNAMES = new Set([
+  'metadata.google.internal',
+  'metadata.goog',
+  'kubernetes.default',
+  'kubernetes.default.svc',
+]);
+
 function parseIpv4(host: string): number[] | null {
   const parts = host.split('.');
   if (parts.length !== 4) return null;
@@ -45,9 +54,23 @@ function isPrivateIpv4(octets: number[]): boolean {
   if (a === 10) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true;
+  if (a === 169 && b === 254) return true; // link-local / cloud metadata
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
   if (a === 0) return true;
   return false;
+}
+
+function ipv4MappedFromV6(host: string): number[] | null {
+  const h = host.toLowerCase();
+  const m = h.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (m) return parseIpv4(m[1]);
+  const hex = h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hex) {
+    const hi = parseInt(hex[1], 16);
+    const lo = parseInt(hex[2], 16);
+    return [(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255];
+  }
+  return null;
 }
 
 function isPrivateIpv6(host: string): boolean {
@@ -56,6 +79,20 @@ function isPrivateIpv6(host: string): boolean {
   if (h.startsWith('fc') || h.startsWith('fd')) return true;
   if (h.startsWith('fe80:')) return true;
   if (h === '::' || h === '0:0:0:0:0:0:0:0') return true;
+  const mapped = ipv4MappedFromV6(h);
+  if (mapped) return isPrivateIpv4(mapped);
+  return false;
+}
+
+/**
+ * Reject non-canonical numeric hosts (decimal / octal IPv4 tricks).
+ * Canonical dotted-quad is handled by parseIpv4.
+ */
+function isExoticNumericHost(host: string): boolean {
+  if (/^\d+$/.test(host)) return true; // e.g. 2130706433 → 127.0.0.1
+  if (/^0x[0-9a-f]+$/i.test(host)) return true;
+  // Dotted with octal-looking segments (leading zeros beyond "0")
+  if (/^(?:0\d+\.){1,3}0?\d+$/.test(host)) return true;
   return false;
 }
 
@@ -63,6 +100,9 @@ export function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
   if (!host || host === 'localhost' || host.endsWith('.localhost')) return true;
   if (host.endsWith('.local')) return true;
+  if (BLOCKED_HOSTNAMES.has(host)) return true;
+
+  if (isExoticNumericHost(host)) return true;
 
   const ipv4 = parseIpv4(host);
   if (ipv4) return isPrivateIpv4(ipv4);

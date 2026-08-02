@@ -56,6 +56,9 @@ export const t = {
     'Apaga os feeds do espaço ativo e importa só os do arquivo. O outro espaço permanece.',
   allowHttpFeedsHint:
     'Aceita URLs http:// sem criptografia. Só ative se um feed não tiver HTTPS.',
+  httpFeedsBlockedTitle: 'Feeds HTTP',
+  httpFeedsBlockedHint:
+    'HTTP é bloqueado pelo Android (network security). Use apenas feeds HTTPS.',
   notifyOnNewItemsHint:
     'Mostra aviso quando um refresh encontra itens novos (ao abrir ou ao puxar na Timeline).',
   exportBackup: 'Exportar backup JSON',

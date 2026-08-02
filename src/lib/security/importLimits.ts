@@ -5,6 +5,9 @@ export const IMPORT_LIMITS = {
   maxFileBytes: 5 * 1024 * 1024,
   maxFeedsMerge: 200,
   maxFeedsReplace: 500,
+  /** Soft cap when restoring a full JSON backup (DoS / memory). */
+  maxBackupItems: 50_000,
+  maxBackupFeeds: 2_000,
 } as const;
 
 export function assertImportFileSize(byteLength: number): void {
