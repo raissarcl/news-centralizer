@@ -1,0 +1,19 @@
+{
+  "folders": [
+    {
+      "name": "Comunidade",
+      "feeds": [
+        {
+          "title": "Hacker News — Front Page",
+          "url": "https://hnrss.org/frontpage",
+          "siteUrl": "https://news.ycombinator.com/"
+        },
+        {
+          "title": "TabNews — Recentes",
+          "url": "https://www.tabnews.com.br/recentes/rss",
+          "siteUrl": "https://www.tabnews.com.br/"
+        }
+      ]
+    }
+  ]
+}

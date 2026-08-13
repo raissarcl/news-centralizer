@@ -79,11 +79,10 @@ Before changing the default catalog:
 
 ```bash
 npm run validate-feeds
+npm run validate-feeds:computing:local   # if you keep a private catalog
 ```
 
-`validate-engblogs` is an alias for the same script pointing at `src/data/engblogs-starter.opml`.
-
-The public general-news seed is lean (`src/data/default-general-feeds.opml`, ~5 outlets). Keep a fuller private catalog in the gitignored `*.local.opml` / `*.local.ts` pair; Metro prefers those when present. Sync embeds with `npm run sync-general-feeds` or `npm run sync-general-feeds:local`.
+Public seeds are lean JSON under `src/data/feeds/` (`computing.json` / `general.json`, 2 example feeds each). Keep fuller private catalogs in the gitignored `*.local.json` files; Metro prefers those when present.
 
 ### Build variants (spaces)
 
@@ -178,7 +177,7 @@ cd android
 
 ### Default feeds
 
-~50+ curated feeds in `src/data/default-feeds.opml` (HN, TabNews, BR blogs, frontend, backend, DevOps, AI, eng blogs, arXiv). **Papers** folder feeds start disabled with **7-day** retention.
+Public seeds: 2 example feeds per space in `src/data/feeds/computing.json` and `general.json`. Optional private catalogs: `computing.local.json` / `general.local.json` (gitignored). **Papers** folder feeds start disabled with **7-day** retention when present in a catalog.
 
 ### RSSHub (sites without native RSS)
 
@@ -197,7 +196,7 @@ app/           # expo-router routes + screens
 src/features/  # shared UI components by domain
 src/store/     # Zustand + persistence + migrations
 src/lib/       # RSS, OPML, backup, notifications, feed health
-src/data/      # default OPML
+src/data/      # JSON feed catalogs (public + optional *.local.json)
 plugins/       # Android widget (prebuild)
 scripts/       # validate-feeds, prune-inactive-feeds, tests
 .github/       # CI (tsc, tests, validate-feeds)
@@ -280,11 +279,10 @@ Antes de alterar o catálogo padrão:
 
 ```bash
 npm run validate-feeds
+npm run validate-feeds:computing:local   # se você mantiver um catálogo privado
 ```
 
-`validate-engblogs` é alias do mesmo script apontando para `src/data/engblogs-starter.opml`.
-
-O seed público de notícias gerais é enxuto (`src/data/default-general-feeds.opml`, ~5 portais). O catálogo completo fica nos arquivos gitignored `*.local.opml` / `*.local.ts`; o Metro usa esses quando existem. Para regenerar o embed: `npm run sync-general-feeds` ou `npm run sync-general-feeds:local`.
+Os seeds públicos são JSON enxutos em `src/data/feeds/` (`computing.json` / `general.json`, 2 fontes de exemplo cada). Catálogos privados ficam nos `*.local.json` gitignored; o Metro usa esses quando existem.
 
 ### Variantes de build (espaços)
 
@@ -379,7 +377,7 @@ cd android
 
 ### Feeds padrão
 
-~50+ feeds curados em `src/data/default-feeds.opml` (HN, TabNews, blogs BR, frontend, backend, DevOps, AI, eng blogs, arXiv). Feeds da pasta **Papers** começam desabilitados com retenção de **7 dias**.
+Seeds públicos: 2 fontes de exemplo por espaço em `src/data/feeds/computing.json` e `general.json`. Catálogos privados opcionais: `computing.local.json` / `general.local.json` (gitignored). Feeds da pasta **Papers** começam desabilitados com retenção de **7 dias** quando presentes no catálogo.
 
 ### RSSHub (sites sem RSS nativo)
 
@@ -398,7 +396,7 @@ app/           # rotas expo-router + telas
 src/features/  # componentes compartilhados por domínio
 src/store/     # Zustand + persistência + migrações
 src/lib/       # RSS, OPML, backup, notificações, saúde feeds
-src/data/      # OPML padrão
+src/data/      # catálogos JSON (públicos + *.local.json opcional)
 plugins/       # widget Android (prebuild)
 scripts/       # validate-feeds, prune-inactive-feeds, testes
 .github/       # CI (tsc, testes, validate-feeds)

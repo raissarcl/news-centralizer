@@ -5,25 +5,33 @@ const path = require('path');
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 
-const localGeneralFeedsOpml = path.resolve(
-  __dirname,
-  'src/data/defaultGeneralFeedsOpml.local.ts',
-);
+const feedsDir = path.resolve(__dirname, 'src/data/feeds');
+const localCatalogs = {
+  computing: path.join(feedsDir, 'computing.local.json'),
+  general: path.join(feedsDir, 'general.local.json'),
+};
+
+function isCatalogImport(normalized, space) {
+  const base = `${space}.json`;
+  return (
+    normalized === `./${base}` ||
+    normalized === `../feeds/${base}` ||
+    normalized.endsWith(`/feeds/${base}`) ||
+    normalized === `@/data/feeds/${base}`
+  );
+}
 
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const normalized = moduleName.replace(/\\/g, '/');
-  const isGeneralFeedsOpml =
-    normalized === './defaultGeneralFeedsOpml' ||
-    normalized === '../data/defaultGeneralFeedsOpml' ||
-    normalized.endsWith('/defaultGeneralFeedsOpml') ||
-    normalized === '@/data/defaultGeneralFeedsOpml';
 
-  if (isGeneralFeedsOpml && fs.existsSync(localGeneralFeedsOpml)) {
-    return {
-      filePath: localGeneralFeedsOpml,
-      type: 'sourceFile',
-    };
+  for (const [space, localPath] of Object.entries(localCatalogs)) {
+    if (isCatalogImport(normalized, space) && fs.existsSync(localPath)) {
+      return {
+        filePath: localPath,
+        type: 'sourceFile',
+      };
+    }
   }
 
   if (defaultResolveRequest) {

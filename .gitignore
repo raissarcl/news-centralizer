@@ -33,9 +33,8 @@ yarn-error.*
 # local env files
 .env*.local
 
-# Full general-news catalog (keep lean seed in git)
-src/data/default-general-feeds.local.opml
-src/data/defaultGeneralFeedsOpml.local.ts
+# Private full feed catalogs (public seeds stay lean in git)
+src/data/feeds/*.local.json
 
 # typescript
 *.tsbuildinfo

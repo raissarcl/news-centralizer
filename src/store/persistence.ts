@@ -14,13 +14,30 @@ import { migrateBlob } from './migrate';
 
 export const STORAGE_KEY = 'news-centralizer:v1';
 
+/**
+ * Empty structural blob used when storage is corrupt.
+ * Does not clear AsyncStorage — a later explicit save overwrites.
+ */
+function emptyPersistedBlob(): PersistedBlob {
+  return migrateBlob(null);
+}
+
 export async function loadBlob(): Promise<PersistedBlob> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return migrateBlob(null);
+      return emptyPersistedBlob();
     }
-    const parsed = JSON.parse(raw) as Partial<PersistedBlob>;
+    let parsed: Partial<PersistedBlob>;
+    try {
+      parsed = JSON.parse(raw) as Partial<PersistedBlob>;
+    } catch (err) {
+      console.warn(
+        '[persistence] Corrupt JSON in AsyncStorage; hydrating empty without wipe',
+        err,
+      );
+      return emptyPersistedBlob();
+    }
     const storedVersion =
       typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 0;
     const migrated = migrateBlob(parsed);
@@ -28,8 +45,12 @@ export async function loadBlob(): Promise<PersistedBlob> {
       await saveBlob(migrated);
     }
     return migrated;
-  } catch {
-    return migrateBlob(null);
+  } catch (err) {
+    console.warn(
+      '[persistence] Failed to load blob; hydrating empty without wipe',
+      err,
+    );
+    return emptyPersistedBlob();
   }
 }
 

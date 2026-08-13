@@ -5,7 +5,6 @@ import {
   resolveActiveSpaceId,
 } from '../lib/spaces';
 import { sortItemsByPublishedDesc } from '../lib/items/sortItems';
-import type { Settings } from '../types';
 import { buildBlob, loadBlob, saveBlob } from './persistence';
 import { useFeedsStore } from './feeds';
 import { useSettingsStore } from './settings';
@@ -13,10 +12,15 @@ import { useSettingsStore } from './settings';
 /** Serializes all blob writes so feeds/settings updates cannot race. */
 let persistChain: Promise<void> = Promise.resolve();
 
-export function persistApp(settingsOverride?: Settings): Promise<void> {
+/**
+ * Persist the current feeds + settings stores into one blob.
+ * Always reads settings from the store at write time so tombstones
+ * (removedFeedUrls) and other patches are never overwritten by a stale override.
+ */
+export function persistApp(): Promise<void> {
   const run = async () => {
     const feedsState = useFeedsStore.getState();
-    const settings = settingsOverride ?? useSettingsStore.getState().settings;
+    const settings = useSettingsStore.getState().settings;
     await saveBlob(
       buildBlob(
         feedsState.spaces,

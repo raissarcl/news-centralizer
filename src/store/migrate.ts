@@ -23,9 +23,14 @@ import {
   GENERAL_SPACE_ID,
   getDefaultSpaces,
 } from '../lib/spaces';
-import { INBOX_FOLDER_NAME, mergeMissingSeedFeeds } from '../lib/opml/seedFromOpml';
-import { DEFAULT_GENERAL_FEEDS_OPML } from '../data/defaultGeneralFeedsOpml';
-import { DEFAULT_FEEDS_OPML } from '../data/defaultFeedsOpml';
+import {
+  INBOX_FOLDER_NAME,
+  mergeMissingSeedFeeds,
+} from '../lib/opml/seedFromOpml';
+import {
+  COMPUTING_FEED_CATALOG,
+  GENERAL_FEED_CATALOG,
+} from '../data/feeds/catalogs';
 import {
   applyCatalogRepairs,
   dedupeHnAndItems,
@@ -331,7 +336,7 @@ export function migrateBlob(raw: unknown): PersistedBlob {
     const merged = mergeMissingSeedFeeds(
       migrated.folders,
       migrated.feeds,
-      DEFAULT_GENERAL_FEEDS_OPML,
+      GENERAL_FEED_CATALOG,
       GENERAL_SPACE_ID,
       {
         allowHttp: migrated.settings.allowHttpFeeds,
@@ -353,7 +358,7 @@ export function migrateBlob(raw: unknown): PersistedBlob {
     const merged = mergeMissingSeedFeeds(
       migrated.folders,
       migrated.feeds,
-      DEFAULT_GENERAL_FEEDS_OPML,
+      GENERAL_FEED_CATALOG,
       GENERAL_SPACE_ID,
       {
         allowHttp: migrated.settings.allowHttpFeeds,
@@ -371,7 +376,7 @@ export function migrateBlob(raw: unknown): PersistedBlob {
     const merged = mergeMissingSeedFeeds(
       migrated.folders,
       migrated.feeds,
-      DEFAULT_FEEDS_OPML,
+      COMPUTING_FEED_CATALOG,
       COMPUTING_SPACE_ID,
       {
         allowHttp: migrated.settings.allowHttpFeeds,

@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { InteractionManager } from 'react-native';
-import { DEFAULT_FEEDS_OPML } from '../data/defaultFeedsOpml';
-import { DEFAULT_GENERAL_FEEDS_OPML } from '../data/defaultGeneralFeedsOpml';
+import {
+  COMPUTING_FEED_CATALOG,
+  GENERAL_FEED_CATALOG,
+} from '../data/feeds/catalogs';
 import { faviconUrlForFeed } from '../lib/favicon';
 import {
   addFeedToFolder,
@@ -30,7 +32,7 @@ import { feedUrlAliases } from '../lib/feeds/feedUrlAliases';
 import { sortItemsByPublishedDesc } from '../lib/items/sortItems';
 import { applyOpmlImport } from '../lib/opml/importFeeds';
 import {
-  buildSeedFromOpml,
+  buildSeedFromCatalog,
   ensureInboxFolder,
   ensureSpaceInboxes,
 } from '../lib/opml/seedFromOpml';
@@ -53,14 +55,7 @@ import {
   getDefaultSpaces,
   resolveActiveSpaceId,
 } from '../lib/spaces';
-import type {
-  FeedItem,
-  FeedSource,
-  Folder,
-  Settings,
-  Space,
-  Tag,
-} from '../types';
+import type { FeedItem, FeedSource, Folder, Space, Tag } from '../types';
 import {
   hydrateApp,
   persistApp,
@@ -178,6 +173,18 @@ function clearRemovedFeedUrl(url: string): void {
   clearRemovedFeedUrls([url]);
 }
 
+function filterSeedFeedsAgainstRemoved(
+  feeds: FeedSource[],
+  removedFeedUrls: string[],
+): FeedSource[] {
+  if (removedFeedUrls.length === 0) return feeds;
+  const removed = new Set(removedFeedUrls.map((u) => normalizeFeedUrl(u)));
+  return feeds.filter((feed) => {
+    const aliases = feedUrlAliases(normalizeFeedUrl(feed.url));
+    return !aliases.some((u) => removed.has(u));
+  });
+}
+
 /** Prevent overlapping background warms of the inactive space. */
 let backgroundWarmInFlight = false;
 
@@ -198,7 +205,7 @@ type FeedsState = {
   refreshingFeedIds: string[];
   refreshProgress: RefreshProgress | null;
   hydrate: () => Promise<void>;
-  persist: (settings?: Settings) => Promise<void>;
+  persist: () => Promise<void>;
   seedDefaultsIfNeeded: () => Promise<void>;
   seedGeneralIfNeeded: () => Promise<void>;
   setActiveSpaceId: (spaceId: string) => Promise<void>;
@@ -273,22 +280,31 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     await hydrateApp();
   },
 
-  persist: async (settings) => {
-    await persistApp(settings);
+  persist: async () => {
+    await persistApp();
   },
 
   seedDefaultsIfNeeded: async () => {
     if (isGeneralOnly()) return;
     const settings = useSettingsStore.getState().settings;
+    // seeded=true means first-run seed already ran (even if user deleted all).
+    if (settings.seeded) return;
     const computingFeeds = get().feeds.filter(
       (f) => f.spaceId === COMPUTING_SPACE_ID,
     );
-    if (settings.seeded || computingFeeds.length > 0) return;
+    if (computingFeeds.length > 0) {
+      await useSettingsStore.getState().update({ seeded: true });
+      return;
+    }
 
-    const seeded = buildSeedFromOpml(
-      DEFAULT_FEEDS_OPML,
+    const seeded = buildSeedFromCatalog(
+      COMPUTING_FEED_CATALOG,
       COMPUTING_SPACE_ID,
       feedUrlOptions(),
+    );
+    const seedFeeds = filterSeedFeedsAgainstRemoved(
+      seeded.feeds,
+      settings.removedFeedUrls,
     );
     const spaces = ensureDefaultSpaces(get().spaces);
     set({
@@ -302,7 +318,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       ),
       feeds: [
         ...get().feeds.filter((f) => f.spaceId !== COMPUTING_SPACE_ID),
-        ...seeded.feeds,
+        ...seedFeeds,
       ],
     });
     await useSettingsStore.getState().update({ seeded: true });
@@ -310,20 +326,24 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
 
   seedGeneralIfNeeded: async () => {
     const settings = useSettingsStore.getState().settings;
+    // seededGeneral=true means first-run seed already ran (even if user deleted all).
+    if (settings.seededGeneral) return;
     const generalFeeds = get().feeds.filter(
       (f) => f.spaceId === GENERAL_SPACE_ID,
     );
-    if (settings.seededGeneral || generalFeeds.length > 0) {
-      if (!settings.seededGeneral) {
-        await useSettingsStore.getState().update({ seededGeneral: true });
-      }
+    if (generalFeeds.length > 0) {
+      await useSettingsStore.getState().update({ seededGeneral: true });
       return;
     }
 
-    const seeded = buildSeedFromOpml(
-      DEFAULT_GENERAL_FEEDS_OPML,
+    const seeded = buildSeedFromCatalog(
+      GENERAL_FEED_CATALOG,
       GENERAL_SPACE_ID,
       feedUrlOptions(),
+    );
+    const seedFeeds = filterSeedFeedsAgainstRemoved(
+      seeded.feeds,
+      settings.removedFeedUrls,
     );
     const spaces = ensureDefaultSpaces(get().spaces);
     set({
@@ -337,7 +357,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       ),
       feeds: [
         ...get().feeds.filter((f) => f.spaceId !== GENERAL_SPACE_ID),
-        ...seeded.feeds,
+        ...seedFeeds,
       ],
     });
     await useSettingsStore.getState().update({ seededGeneral: true });

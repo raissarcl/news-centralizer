@@ -1,14 +1,15 @@
 import fs from 'fs';
 import path from 'path';
-import { flattenOpmlFeeds, parseOpml } from '../src/lib/opml';
+import type { FeedCatalog } from '../src/data/feeds/types';
 import { parseFeedXml } from '../src/lib/rss/parseFeedXml';
+import { flattenCatalogFeeds } from './catalogJson';
 
-function loadGeneralFeedsOpml(): string {
-  const dataDir = path.join(__dirname, '../src/data');
-  const local = path.join(dataDir, 'default-general-feeds.local.opml');
-  const pub = path.join(dataDir, 'default-general-feeds.opml');
+function loadGeneralCatalog(): FeedCatalog {
+  const feedsDir = path.join(__dirname, '../src/data/feeds');
+  const local = path.join(feedsDir, 'general.local.json');
+  const pub = path.join(feedsDir, 'general.json');
   const file = fs.existsSync(local) ? local : pub;
-  return fs.readFileSync(file, 'utf8');
+  return JSON.parse(fs.readFileSync(file, 'utf8')) as FeedCatalog;
 }
 
 type Row = {
@@ -43,40 +44,40 @@ function countRawItems(xml: string): number {
 async function probe(
   title: string,
   url: string,
-  enabled?: boolean,
+  enabled: boolean | undefined,
 ): Promise<Row> {
   try {
     const res = await fetch(url, {
       headers: {
         Accept:
           'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
-        'User-Agent': 'NewsCentralizerAudit/1.0',
+        'User-Agent': 'NewsCentralizer-Audit/1.0',
       },
       redirect: 'follow',
       signal: AbortSignal.timeout(20000),
     });
-    const buf = Buffer.from(await res.arrayBuffer());
-    // Folha often serves ISO-8859-1; try decode as latin1 if utf8 has replacement chars heavily
-    let text = buf.toString('utf8');
     const ctype = res.headers.get('content-type') ?? '';
-    if (/iso-8859-1|latin-1|windows-1252/i.test(ctype) || text.includes('�')) {
-      text = buf.toString('latin1');
-    }
+    const text = await res.text();
     const format = detectFormat(text);
     const rawHint = countRawItems(text);
-    const parsed = parseFeedXml(text).length;
+    let parsed = 0;
     let note = '';
-    if (!res.ok) note = `HTTP ${res.status}`;
-    else if (format === 'html') note = 'HTML, não é feed';
-    else if (rawHint === 0) note = 'XML sem <item>/<entry>';
-    else if (parsed === 0) note = 'tem itens, parser zerou (data/formato)';
-    else note = 'ok';
+    try {
+      parsed = parseFeedXml(text).length;
+      if (parsed === 0) {
+        if (format === 'html') note = 'HTML, não é feed';
+        else if (rawHint === 0) note = 'sem item/entry no XML';
+        else note = 'parser retornou 0';
+      }
+    } catch (e) {
+      note = e instanceof Error ? e.message.slice(0, 80) : 'parse error';
+    }
     return {
       title,
       url,
       enabled: enabled !== false,
       http: res.status,
-      ctype: ctype.slice(0, 40),
+      ctype,
       format,
       rawHint,
       parsed,
@@ -98,7 +99,7 @@ async function probe(
 }
 
 async function main() {
-  const feeds = flattenOpmlFeeds(parseOpml(loadGeneralFeedsOpml()));
+  const feeds = flattenCatalogFeeds(loadGeneralCatalog());
   const rows: Row[] = [];
   for (const f of feeds) {
     process.stdout.write(`.`);

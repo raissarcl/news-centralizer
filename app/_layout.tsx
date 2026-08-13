@@ -13,6 +13,9 @@ import { useTheme } from '@/theme';
 import { t } from '@/lib/i18n';
 import { ensureNotificationChannel, notifyNewItems } from '@/lib/notifications';
 
+/** Prevent overlapping hydrate+seed under Strict Mode / Fast Refresh. */
+let bootInFlight: Promise<void> | null = null;
+
 function handleDeepLink(url: string): void {
   const parsed = Linking.parse(url);
   const path = parsed.path ?? '';
@@ -32,11 +35,18 @@ export default function RootLayout() {
 
   useEffect(() => {
     void (async () => {
+      const pending =
+        bootInFlight ??
+        (bootInFlight = (async () => {
+          await hydrateApp();
+          await seedDefaultsIfNeeded();
+          await seedGeneralIfNeeded();
+          await ensureNotificationChannel();
+        })().finally(() => {
+          bootInFlight = null;
+        }));
       try {
-        await hydrateApp();
-        await seedDefaultsIfNeeded();
-        await seedGeneralIfNeeded();
-        await ensureNotificationChannel();
+        await pending;
       } finally {
         setBootReady(true);
       }

@@ -16,8 +16,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await hydrateApp();
   },
   update: async (patch) => {
-    const next = { ...get().settings, ...patch };
-    set({ settings: next });
-    await persistApp(next);
+    set({ settings: { ...get().settings, ...patch } });
+    await persistApp();
   },
 }));

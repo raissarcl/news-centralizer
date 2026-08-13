@@ -1,6 +1,6 @@
 /**
  * Fetch every catalog feed and remove those with fewer than N items
- * published in the last D days from the project OPML (+ embedded TS).
+ * published in the last D days from project JSON catalogs.
  *
  *   npx tsx scripts/prune-inactive-feeds.ts           # dry-run
  *   npx tsx scripts/prune-inactive-feeds.ts --apply   # write changes
@@ -12,12 +12,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isAfter, parseISO, subDays } from 'date-fns';
-import { flattenOpmlFeeds, parseOpml } from '../src/lib/opml';
+import type { FeedCatalog } from '../src/data/feeds/types';
 import { decodeFeedBody } from '../src/lib/rss/decodeFeedBody';
 import { parseFeedXml } from '../src/lib/rss/parseFeedXml';
+import { flattenCatalogFeeds, pruneCatalogUrls } from './catalogJson';
 
 const ROOT = path.resolve(__dirname, '..');
-const DATA_DIR = path.join(ROOT, 'src', 'data');
+const FEEDS_DIR = path.join(ROOT, 'src', 'data', 'feeds');
 
 const APPLY = process.argv.includes('--apply');
 const MIN_RECENT = Number(
@@ -28,35 +29,17 @@ const LOOKBACK_DAYS = Number(
     30,
 );
 
-type Catalog = {
-  opmlFile: string;
-  tsFile: string;
-  exportName: string;
+type CatalogFile = {
+  file: string;
   optional?: boolean;
 };
 
-const CATALOGS: Catalog[] = [
-  {
-    opmlFile: 'default-feeds.opml',
-    tsFile: 'defaultFeedsOpml.ts',
-    exportName: 'DEFAULT_FEEDS_OPML',
-  },
-  {
-    opmlFile: 'default-general-feeds.opml',
-    tsFile: 'defaultGeneralFeedsOpml.ts',
-    exportName: 'DEFAULT_GENERAL_FEEDS_OPML',
-  },
-  {
-    opmlFile: 'default-general-feeds.local.opml',
-    tsFile: 'defaultGeneralFeedsOpml.local.ts',
-    exportName: 'DEFAULT_GENERAL_FEEDS_OPML',
-    optional: true,
-  },
-  {
-    opmlFile: 'engblogs-starter.opml',
-    tsFile: 'engblogsStarter.ts',
-    exportName: 'ENGBLOGS_STARTER_OPML',
-  },
+const CATALOGS: CatalogFile[] = [
+  { file: 'computing.json' },
+  { file: 'general.json' },
+  { file: 'computing.local.json', optional: true },
+  { file: 'general.local.json', optional: true },
+  { file: 'engblogs-legacy.json', optional: true },
 ];
 
 type Probe = {
@@ -113,46 +96,6 @@ async function probeFeed(url: string, title: string): Promise<Probe> {
   }
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** Remove rss outlines by xmlUrl; drop empty folder groups. */
-function pruneOpmlXml(opml: string, urlsToRemove: Set<string>): string {
-  let next = opml.replace(/\r\n/g, '\n');
-  for (const url of urlsToRemove) {
-    const re = new RegExp(
-      `^[ \\t]*<outline\\b[^>]*xmlUrl="${escapeRegExp(url)}"[^>]*/>\\s*\\n?`,
-      'gim',
-    );
-    next = next.replace(re, '');
-  }
-  // Empty folder: <outline ...>   </outline> with no children
-  next = next.replace(
-    /^[ \t]*<outline\b(?![^>]*\bxmlUrl=)[^>]*>\s*<\/outline>\s*\n?/gim,
-    '',
-  );
-  return next.endsWith('\n') ? next : `${next}\n`;
-}
-
-function writeEmbeddedOpml(
-  opmlPath: string,
-  tsPath: string,
-  exportName: string,
-): void {
-  const opml = fs
-    .readFileSync(opmlPath, 'utf8')
-    .replace(/\r\n/g, '\n')
-    .trimEnd();
-  const body = opml.endsWith('\n') ? opml : `${opml}\n`;
-  const escaped = body.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
-  fs.writeFileSync(
-    tsPath,
-    `export const ${exportName} = \`${escaped}\`;\n`,
-    'utf8',
-  );
-}
-
 async function main(): Promise<void> {
   if (!Number.isFinite(MIN_RECENT) || MIN_RECENT < 0) {
     console.error('Invalid --min');
@@ -164,27 +107,27 @@ async function main(): Promise<void> {
   }
 
   const catalogs = CATALOGS.filter((c) => {
-    const p = path.join(DATA_DIR, c.opmlFile);
+    const p = path.join(FEEDS_DIR, c.file);
     if (fs.existsSync(p)) return true;
     if (c.optional) return false;
-    console.error(`Missing OPML: ${p}`);
+    console.error(`Missing catalog: ${p}`);
     process.exit(1);
   });
 
   const byUrl = new Map<string, { title: string; files: string[] }>();
   for (const catalog of catalogs) {
-    const opmlPath = path.join(DATA_DIR, catalog.opmlFile);
-    const feeds = flattenOpmlFeeds(
-      parseOpml(fs.readFileSync(opmlPath, 'utf8')),
-    );
-    for (const feed of feeds) {
+    const catalogPath = path.join(FEEDS_DIR, catalog.file);
+    const parsed = JSON.parse(
+      fs.readFileSync(catalogPath, 'utf8'),
+    ) as FeedCatalog;
+    for (const feed of flattenCatalogFeeds(parsed)) {
       const prev = byUrl.get(feed.url);
       if (prev) {
-        prev.files.push(catalog.opmlFile);
+        prev.files.push(catalog.file);
       } else {
         byUrl.set(feed.url, {
           title: feed.title,
-          files: [catalog.opmlFile],
+          files: [catalog.file],
         });
       }
     }
@@ -195,9 +138,7 @@ async function main(): Promise<void> {
   console.log(
     `Probing ${urls.length} unique feeds (need ≥${MIN_RECENT} items in last ${LOOKBACK_DAYS}d, concurrency=${concurrency})`,
   );
-  console.log(
-    APPLY ? 'Mode: APPLY (will rewrite OPML + TS)\n' : 'Mode: dry-run\n',
-  );
+  console.log(APPLY ? 'Mode: APPLY (will rewrite JSON)\n' : 'Mode: dry-run\n');
 
   const probes: Probe[] = new Array(urls.length);
   let nextIndex = 0;
@@ -257,21 +198,23 @@ async function main(): Promise<void> {
   }
 
   for (const catalog of catalogs) {
-    const opmlPath = path.join(DATA_DIR, catalog.opmlFile);
-    const before = fs.readFileSync(opmlPath, 'utf8');
-    const after = pruneOpmlXml(before, toRemove);
-    if (before === after) {
-      console.log(`unchanged ${catalog.opmlFile}`);
+    const catalogPath = path.join(FEEDS_DIR, catalog.file);
+    const before = JSON.parse(
+      fs.readFileSync(catalogPath, 'utf8'),
+    ) as FeedCatalog;
+    const after = pruneCatalogUrls(before, toRemove);
+    const beforeCount = flattenCatalogFeeds(before).length;
+    const afterCount = flattenCatalogFeeds(after).length;
+    if (beforeCount === afterCount) {
+      console.log(`unchanged ${catalog.file}`);
       continue;
     }
-    const beforeCount = flattenOpmlFeeds(parseOpml(before)).length;
-    const afterCount = flattenOpmlFeeds(parseOpml(after)).length;
-    fs.writeFileSync(opmlPath, after, 'utf8');
-    const tsPath = path.join(DATA_DIR, catalog.tsFile);
-    writeEmbeddedOpml(opmlPath, tsPath, catalog.exportName);
-    console.log(
-      `updated ${catalog.opmlFile} (${beforeCount} → ${afterCount}) + ${catalog.tsFile}`,
+    fs.writeFileSync(
+      catalogPath,
+      `${JSON.stringify(after, null, 2)}\n`,
+      'utf8',
     );
+    console.log(`updated ${catalog.file} (${beforeCount} → ${afterCount})`);
   }
 
   console.log('\nDone.');

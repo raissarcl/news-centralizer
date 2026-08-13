@@ -1,0 +1,109 @@
+{
+  "folders": [
+    {
+      "name": "Eng Blogs",
+      "feeds": [
+        {
+          "title": "Netflix Tech Blog",
+          "url": "https://netflixtechblog.com/feed",
+          "siteUrl": "https://netflixtechblog.com/"
+        },
+        {
+          "title": "Cloudflare Blog",
+          "url": "https://blog.cloudflare.com/rss/",
+          "siteUrl": "https://blog.cloudflare.com/"
+        },
+        {
+          "title": "Tailscale Blog",
+          "url": "https://tailscale.com/blog/index.xml",
+          "siteUrl": "https://tailscale.com/blog/"
+        },
+        {
+          "title": "Two Sigma Engineering",
+          "url": "https://www.twosigma.com/topic/engineering/feed/",
+          "siteUrl": "https://www.twosigma.com/topic/engineering/"
+        },
+        {
+          "title": "Dropbox Tech",
+          "url": "https://dropbox.tech/feed",
+          "siteUrl": "https://dropbox.tech/"
+        },
+        {
+          "title": "GitHub Blog Engineering",
+          "url": "https://github.blog/engineering/feed/",
+          "siteUrl": "https://github.blog/engineering/"
+        },
+        {
+          "title": "Meta Engineering",
+          "url": "https://engineering.fb.com/feed/",
+          "siteUrl": "https://engineering.fb.com/"
+        },
+        {
+          "title": "Google Developers Blog",
+          "url": "https://blog.google/technology/developers/rss/",
+          "siteUrl": "https://blog.google/technology/developers/"
+        },
+        {
+          "title": "AWS Architecture",
+          "url": "https://aws.amazon.com/blogs/architecture/feed/",
+          "siteUrl": "https://aws.amazon.com/blogs/architecture/"
+        },
+        {
+          "title": "Vercel Blog",
+          "url": "https://vercel.com/blog/feed.xml",
+          "siteUrl": "https://vercel.com/blog"
+        },
+        {
+          "title": "Discord Engineering",
+          "url": "https://discord.com/blog/rss.xml",
+          "siteUrl": "https://discord.com/blog"
+        },
+        {
+          "title": "Slack Engineering",
+          "url": "https://slack.engineering/feed/",
+          "siteUrl": "https://slack.engineering/"
+        },
+        {
+          "title": "Spotify Engineering",
+          "url": "https://engineering.atspotify.com/feed/",
+          "siteUrl": "https://engineering.atspotify.com/"
+        },
+        {
+          "title": "Datadog Engineering",
+          "url": "https://www.datadoghq.com/blog/index.xml",
+          "siteUrl": "https://www.datadoghq.com/blog/"
+        },
+        {
+          "title": "Airbnb Engineering",
+          "url": "https://medium.com/feed/airbnb-engineering",
+          "siteUrl": "https://medium.com/airbnb-engineering"
+        },
+        {
+          "title": "Julia Evans",
+          "url": "https://jvns.ca/atom.xml",
+          "siteUrl": "https://jvns.ca/"
+        },
+        {
+          "title": "Eli Bendersky",
+          "url": "https://eli.thegreenplace.net/feeds/all.atom.xml",
+          "siteUrl": "https://eli.thegreenplace.net/"
+        },
+        {
+          "title": "Heroku Blog",
+          "url": "https://blog.heroku.com/feed",
+          "siteUrl": "https://blog.heroku.com/"
+        },
+        {
+          "title": "PostgreSQL Planet",
+          "url": "https://planet.postgresql.org/rss20.xml",
+          "siteUrl": "https://planet.postgresql.org/"
+        },
+        {
+          "title": "Fly.io Blog",
+          "url": "https://fly.io/blog/feed.xml",
+          "siteUrl": "https://fly.io/blog/"
+        }
+      ]
+    }
+  ]
+}

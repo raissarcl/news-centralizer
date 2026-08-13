@@ -1,4 +1,4 @@
-import { ENGBLOGS_STARTER_OPML } from '../data/engblogsStarter';
+import engblogsLegacyCatalog from '../data/feeds/engblogs-legacy.json';
 import {
   inboxFolderId,
   isInboxFolderId,
@@ -7,13 +7,15 @@ import {
 } from '../lib/feeds/feedFolders';
 import { createId } from '../lib/id';
 import { dedupeItemsByLink, normalizeFeedUrl } from '../lib/items/dedupeItems';
-import { flattenOpmlFeeds, parseOpml } from '../lib/opml';
-import { INBOX_FOLDER_NAME, slugifyFolder } from '../lib/opml/seedFromOpml';
-import { validateFeedUrl } from '../lib/security/urls';
+import {
+  INBOX_FOLDER_NAME,
+  mergeMissingSeedFeeds,
+  slugifyFolder,
+} from '../lib/opml/seedFromOpml';
+import type { FeedCatalog } from '../data/feeds/types';
 import {
   GOOGLE_DEVELOPERS_BLOG_OLD_URL,
   GOOGLE_DEVELOPERS_BLOG_URL,
-  feedUrlAliases,
 } from '../lib/feeds/feedUrlAliases';
 import {
   COMPUTING_SPACE_ID,
@@ -21,10 +23,11 @@ import {
   GENERAL_SPACE_ID,
   resolveActiveSpaceId,
 } from '../lib/spaces';
-import type { FeedSource, Folder, PersistedBlob, Settings } from '../types';
+import type { FeedSource, PersistedBlob, Settings } from '../types';
 
 const REDUNDANT_HN_NEWEST_URL = normalizeFeedUrl('https://hnrss.org/newest');
 const BROKEN_HN_AI_URL = normalizeFeedUrl('https://hnrss.org/newest?search=AI');
+const ENGBLOGS_LEGACY_CATALOG = engblogsLegacyCatalog as FeedCatalog;
 
 export {
   GOOGLE_DEVELOPERS_BLOG_OLD_URL,
@@ -44,7 +47,10 @@ export function rewriteGoogleDevelopersBlogUrl(
 ): PersistedBlob {
   const removed = removedUrlSet(blob);
   const newNormalized = normalizeFeedUrl(GOOGLE_DEVELOPERS_BLOG_URL);
-  if (removed.has(GOOGLE_DEVELOPERS_BLOG_OLD_URL) || removed.has(newNormalized)) {
+  if (
+    removed.has(GOOGLE_DEVELOPERS_BLOG_OLD_URL) ||
+    removed.has(newNormalized)
+  ) {
     // Drop any lingering copies if the user deleted this catalog feed.
     const dropIds = new Set(
       blob.feeds
@@ -107,62 +113,18 @@ export function rewriteGoogleDevelopersBlogUrl(
 }
 
 export function mergeEngBlogsIntoBlob(blob: PersistedBlob): PersistedBlob {
-  const outlines = parseOpml(ENGBLOGS_STARTER_OPML);
-  const feedInputs = flattenOpmlFeeds(outlines).filter(
-    (input) =>
-      validateFeedUrl(input.url, { allowHttp: blob.settings.allowHttpFeeds })
-        .ok,
+  const merged = mergeMissingSeedFeeds(
+    blob.folders,
+    blob.feeds,
+    ENGBLOGS_LEGACY_CATALOG,
+    COMPUTING_SPACE_ID,
+    {
+      allowHttp: blob.settings.allowHttpFeeds,
+      removedFeedUrls: blob.settings.removedFeedUrls,
+    },
   );
-  const removed = removedUrlSet(blob);
-  const existingUrls = new Set(
-    blob.feeds.map((f) => normalizeFeedUrl(f.url)),
-  );
-  // Expand aliases so old Google URL blocks re-adding the new one.
-  for (const url of [...existingUrls]) {
-    for (const alias of feedUrlAliases(url)) existingUrls.add(alias);
-  }
-  let folders = [...blob.folders];
-  const folderIdByName = new Map(
-    folders
-      .filter((f) => f.spaceId === COMPUTING_SPACE_ID)
-      .map((f) => [f.name, f.id]),
-  );
-  const feeds = [...blob.feeds];
-  let added = 0;
-
-  for (const input of feedInputs) {
-    const normalized = normalizeFeedUrl(input.url);
-    const aliases = feedUrlAliases(normalized);
-    if (aliases.some((u) => existingUrls.has(u) || removed.has(u))) continue;
-    const folderName = input.folderName ?? 'Eng Blogs';
-    let folderId = folderIdByName.get(folderName);
-    if (!folderId) {
-      const folder: Folder = {
-        id: slugifyFolder(folderName) || createId('folder'),
-        name: folderName,
-        spaceId: COMPUTING_SPACE_ID,
-        sortOrder: folders.length,
-      };
-      folders = [...folders, folder];
-      folderId = folder.id;
-      folderIdByName.set(folderName, folderId);
-    }
-    feeds.push({
-      id: createId('feed'),
-      title: input.title,
-      url: input.url,
-      siteUrl: input.siteUrl,
-      spaceId: COMPUTING_SPACE_ID,
-      folderIds: normalizeFeedFolderIds([folderId], COMPUTING_SPACE_ID),
-      tagIds: [],
-      enabled: true,
-    });
-    for (const alias of aliases) existingUrls.add(alias);
-    added += 1;
-  }
-
-  if (added === 0) return blob;
-  return { ...blob, folders, feeds };
+  if (merged.added === 0) return blob;
+  return { ...blob, folders: merged.folders, feeds: merged.feeds };
 }
 
 function removeFeedsByUrl(

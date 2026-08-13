@@ -1,13 +1,10 @@
 import { faviconUrlForFeed } from '../favicon';
-import {
-  inboxFolderId,
-  normalizeFeedFolderIds,
-} from '../feeds/feedFolders';
+import { inboxFolderId, normalizeFeedFolderIds } from '../feeds/feedFolders';
 import { createId } from '../id';
 import { normalizeFeedUrl } from '../items/dedupeItems';
 import { validateFeedUrl } from '../security/urls';
+import type { FeedCatalog } from '../../data/feeds/types';
 import type { FeedSource, Folder } from '../../types';
-import { flattenOpmlFeeds, parseOpml } from './index';
 import { feedUrlAliases } from '../feeds/feedUrlAliases';
 
 export const INBOX_FOLDER_NAME = 'Caixa de entrada';
@@ -49,64 +46,52 @@ export type SeedUrlOptions = {
   allowHttp: boolean;
 };
 
-export function buildSeedFromOpml(
-  opml: string,
+export function buildSeedFromCatalog(
+  catalog: FeedCatalog,
   spaceId: string,
   urlOptions: SeedUrlOptions,
 ): {
   folders: Folder[];
   feeds: FeedSource[];
 } {
-  const outlines = parseOpml(opml);
-  const feedInputs = flattenOpmlFeeds(outlines).filter(
-    (input) => validateFeedUrl(input.url, urlOptions).ok,
-  );
-  const folderNames = [
-    ...new Set(
-      feedInputs.map((f) => f.folderName).filter((n): n is string => !!n),
-    ),
-  ];
-  const folders: Folder[] = folderNames.map((name, index) => {
-    const base = slugifyFolder(name) || `folder-${index}`;
+  const folders: Folder[] = catalog.folders.map((folder, index) => {
+    const base = slugifyFolder(folder.name) || `folder-${index}`;
     const id = `${spaceId}-${base}`;
-    const isPapers = name.toLowerCase().includes('papers');
+    const isPapers = folder.name.toLowerCase().includes('papers');
     return {
       id,
-      name,
+      name: folder.name,
       spaceId,
       sortOrder: index,
-      retentionDays: isPapers ? 7 : undefined,
+      retentionDays: folder.retentionDays ?? (isPapers ? 7 : undefined),
     };
   });
   const folderIdByName = new Map(folders.map((f) => [f.name, f.id]));
   const inboxId = inboxFolderId(spaceId);
 
-  const feeds: FeedSource[] = feedInputs.map((input) => {
-    const folderNameLower = input.folderName?.toLowerCase() ?? '';
-    const enabledFromAttr = input.enabled;
-    const enabled =
-      enabledFromAttr !== undefined
-        ? enabledFromAttr
-        : !folderNameLower.includes('papers');
-    return {
-      id: createId('feed'),
-      title: input.title,
-      url: input.url,
-      siteUrl: input.siteUrl,
-      favicon: faviconUrlForFeed(input.siteUrl, input.url),
-      spaceId,
-      folderIds: normalizeFeedFolderIds(
-        [
-          input.folderName
-            ? (folderIdByName.get(input.folderName) ?? inboxId)
-            : inboxId,
-        ],
+  const feeds: FeedSource[] = [];
+  for (const folder of catalog.folders) {
+    const folderNameLower = folder.name.toLowerCase();
+    const folderId = folderIdByName.get(folder.name) ?? inboxId;
+    for (const entry of folder.feeds) {
+      if (!validateFeedUrl(entry.url, urlOptions).ok) continue;
+      const enabled =
+        entry.enabled !== undefined
+          ? entry.enabled
+          : !folderNameLower.includes('papers');
+      feeds.push({
+        id: createId('feed'),
+        title: entry.title,
+        url: entry.url,
+        siteUrl: entry.siteUrl,
+        favicon: faviconUrlForFeed(entry.siteUrl, entry.url),
         spaceId,
-      ),
-      tagIds: [],
-      enabled,
-    };
-  });
+        folderIds: normalizeFeedFolderIds([folderId], spaceId),
+        tagIds: [],
+        enabled,
+      });
+    }
+  }
 
   return {
     folders: ensureInboxFolder(folders, spaceId),
@@ -120,17 +105,17 @@ export type MergeSeedOptions = SeedUrlOptions & {
 };
 
 /**
- * Adds folders/feeds from a seed OPML that are missing by URL.
+ * Adds folders/feeds from a seed catalog that are missing by URL.
  * Does not remove or alter existing user feeds.
  */
 export function mergeMissingSeedFeeds(
   existingFolders: Folder[],
   existingFeeds: FeedSource[],
-  opml: string,
+  catalog: FeedCatalog,
   spaceId: string,
   urlOptions: MergeSeedOptions,
 ): { folders: Folder[]; feeds: FeedSource[]; added: number } {
-  const seeded = buildSeedFromOpml(opml, spaceId, urlOptions);
+  const seeded = buildSeedFromCatalog(catalog, spaceId, urlOptions);
   const removed = new Set(
     (urlOptions.removedFeedUrls ?? []).map((u) => normalizeFeedUrl(u)),
   );
@@ -142,9 +127,7 @@ export function mergeMissingSeedFeeds(
 
   let folders = [...existingFolders];
   const folderIdByName = new Map(
-    folders
-      .filter((f) => f.spaceId === spaceId)
-      .map((f) => [f.name, f.id]),
+    folders.filter((f) => f.spaceId === spaceId).map((f) => [f.name, f.id]),
   );
 
   for (const folder of seeded.folders) {
@@ -156,16 +139,12 @@ export function mergeMissingSeedFeeds(
 
   const feeds = [...existingFeeds];
   let added = 0;
-  const seedFolderNameById = new Map(
-    seeded.folders.map((f) => [f.id, f.name]),
-  );
+  const seedFolderNameById = new Map(seeded.folders.map((f) => [f.id, f.name]));
 
   for (const seedFeed of seeded.feeds) {
     const normalized = normalizeFeedUrl(seedFeed.url);
     const aliases = feedUrlAliases(normalized);
-    if (
-      aliases.some((u) => existingUrls.has(u) || removed.has(u))
-    ) {
+    if (aliases.some((u) => existingUrls.has(u) || removed.has(u))) {
       continue;
     }
 

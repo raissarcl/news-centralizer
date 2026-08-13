@@ -1,0 +1,19 @@
+{
+  "folders": [
+    {
+      "name": "Portais",
+      "feeds": [
+        {
+          "title": "G1",
+          "url": "https://g1.globo.com/dynamo/rss2.xml",
+          "siteUrl": "https://g1.globo.com/"
+        },
+        {
+          "title": "Globo News",
+          "url": "https://g1.globo.com/dynamo/globonews/rss2.xml",
+          "siteUrl": "https://g1.globo.com/globonews/"
+        }
+      ]
+    }
+  ]
+}

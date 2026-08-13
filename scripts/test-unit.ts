@@ -30,7 +30,13 @@ import {
 } from '../src/lib/feeds/feedFolders';
 import { applyOpmlImport } from '../src/lib/opml/importFeeds';
 import { mergeMissingSeedFeeds } from '../src/lib/opml/seedFromOpml';
-import { DEFAULT_GENERAL_FEEDS_OPML } from '../src/data/defaultGeneralFeedsOpml';
+import {
+  COMPUTING_FEED_CATALOG,
+  GENERAL_FEED_CATALOG,
+} from '../src/data/feeds/catalogs';
+import type { FeedCatalog } from '../src/data/feeds/types';
+import legacyGeneralSeed from './fixtures/legacy-general-seed.json';
+import legacyComputingSeed from './fixtures/legacy-computing-seed.json';
 import { migrateBlob, mergeEngBlogsIntoBlob } from '../src/store/migrate';
 import {
   GOOGLE_DEVELOPERS_BLOG_OLD_URL,
@@ -39,6 +45,9 @@ import {
 import { normalizeFeedUrl } from '../src/lib/items/dedupeItems';
 import type { FeedItem, FeedSource, Folder, PersistedBlob } from '../src/types';
 import { DEFAULT_SETTINGS } from '../src/types';
+
+const LEGACY_GENERAL_CATALOG = legacyGeneralSeed as FeedCatalog;
+const LEGACY_COMPUTING_CATALOG = legacyComputingSeed as FeedCatalog;
 
 function item(
   id: string,
@@ -291,7 +300,10 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   </item></channel></rss>`;
   const entries = parseFeedXml(rssXml);
   assert.equal(entries.length, 1);
-  assert.equal(entries[0].link, 'https://www1.folha.uol.com.br/poder/2026/07/exemplo.shtml');
+  assert.equal(
+    entries[0].link,
+    'https://www1.folha.uol.com.br/poder/2026/07/exemplo.shtml',
+  );
 }
 
 // parseFeedXml keeps items without pubDate (channel lastBuildDate / synthetic)
@@ -376,7 +388,8 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.equal(migrated.schemaVersion, 14);
   assert.equal(migrated.settings.seededGeneral, true);
   assert.ok(Array.isArray(migrated.settings.removedFeedUrls));
-  assert.ok(migrated.folders.some((f) => f.name === 'Cultura pop'));
+  assert.ok(migrated.folders.some((f) => f.name === 'Portais'));
+  assert.ok(migrated.folders.some((f) => f.name === 'Eng Blogs'));
   assert.equal(
     migrated.folders.find((f) => f.id === 'inbox:computing')?.name,
     'Caixa de entrada',
@@ -548,7 +561,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.ok(migrated.feeds.some((f) => f.id === 'lobsters'));
 }
 
-// mergeMissingSeedFeeds adds Cultura pop when only Portais exist
+// mergeMissingSeedFeeds adds Cultura pop when only Portais exist (legacy catalog)
 {
   const spaceId = 'general';
   const existingFolders: Folder[] = [
@@ -570,7 +583,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   const merged = mergeMissingSeedFeeds(
     existingFolders,
     existingFeeds,
-    DEFAULT_GENERAL_FEEDS_OPML,
+    LEGACY_GENERAL_CATALOG,
     spaceId,
     { allowHttp: false },
   );
@@ -580,7 +593,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.ok(merged.feeds.some((f) => f.id === 'cnn'));
 }
 
-// mergeMissingSeedFeeds skips tombstoned URLs
+// mergeMissingSeedFeeds skips tombstoned URLs (legacy catalog)
 {
   const spaceId = 'general';
   const contigoUrl = 'https://www.contigo.com.br/feed/';
@@ -601,7 +614,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
         title: 'CNN Brasil',
       },
     ],
-    DEFAULT_GENERAL_FEEDS_OPML,
+    LEGACY_GENERAL_CATALOG,
     spaceId,
     {
       allowHttp: false,
@@ -612,15 +625,48 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.ok(merged.feeds.some((f) => f.id === 'cnn'));
 }
 
-// migrate v11 merges missing general seed feeds (Cultura pop)
+// public lean catalog merge still respects tombstones
+{
+  const spaceId = 'general';
+  const globoNewsUrl = 'https://g1.globo.com/dynamo/globonews/rss2.xml';
+  const merged = mergeMissingSeedFeeds(
+    [
+      {
+        id: 'general-portais',
+        name: 'Portais',
+        spaceId,
+        sortOrder: 0,
+      },
+    ],
+    [
+      {
+        ...feed('g1', ['general-portais']),
+        spaceId,
+        url: 'https://g1.globo.com/dynamo/rss2.xml',
+        title: 'G1',
+      },
+    ],
+    GENERAL_FEED_CATALOG,
+    spaceId,
+    {
+      allowHttp: false,
+      removedFeedUrls: [normalizeFeedUrl(globoNewsUrl)],
+    },
+  );
+  assert.ok(!merged.feeds.some((f) => /globonews/i.test(f.url)));
+  assert.ok(merged.feeds.some((f) => f.id === 'g1'));
+  assert.equal(merged.added, 0);
+}
+
+// migrate v11 merges missing public general seed feeds (Globo News)
 {
   const migrated = migrateBlob({
     schemaVersion: 10,
     feeds: [
       {
-        id: 'cnn',
-        title: 'CNN Brasil',
-        url: 'https://www.cnnbrasil.com.br/feed/',
+        id: 'g1',
+        title: 'G1',
+        url: 'https://g1.globo.com/dynamo/rss2.xml',
         spaceId: 'general',
         folderIds: ['general-portais'],
         tagIds: [],
@@ -639,12 +685,12 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     tags: [],
     settings: { seededGeneral: true },
   });
-  assert.ok(migrated.folders.some((f) => f.name === 'Cultura pop'));
-  assert.ok(migrated.feeds.some((f) => f.title === 'Contigo!'));
-  assert.ok(migrated.feeds.some((f) => f.id === 'cnn'));
+  assert.ok(migrated.feeds.some((f) => /globonews/i.test(f.url)));
+  assert.ok(migrated.feeds.some((f) => f.id === 'g1'));
+  assert.ok(!migrated.feeds.some((f) => f.title === 'Contigo!'));
 }
 
-// migrate v13 restores pruned computing feeds (e.g. React Blog)
+// migrate v13 merges lean computing seed + eng blogs (not full legacy catalog)
 {
   const migrated = migrateBlob({
     schemaVersion: 12,
@@ -671,10 +717,93 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     tags: [],
     settings: { seeded: true },
   });
-  assert.ok(migrated.feeds.some((f) => f.title === 'React Blog'));
-  assert.ok(migrated.feeds.some((f) => f.title === 'web.dev'));
+  assert.ok(migrated.feeds.some((f) => f.url.includes('hnrss.org/frontpage')));
+  assert.ok(migrated.feeds.some((f) => /tabnews\.com\.br/i.test(f.url)));
   assert.ok(migrated.feeds.some((f) => f.id === 'lobsters'));
+  assert.ok(migrated.folders.some((f) => f.name === 'Eng Blogs'));
+  assert.ok(!migrated.feeds.some((f) => f.title === 'React Blog'));
   assert.ok(!migrated.feeds.some((f) => /dev\.to\/feed/i.test(f.url)));
+}
+
+// legacy computing catalog still restores React Blog when merged directly
+{
+  const merged = mergeMissingSeedFeeds(
+    [
+      {
+        id: 'comunidade',
+        name: 'Comunidade',
+        spaceId: 'computing',
+        sortOrder: 0,
+      },
+    ],
+    [
+      {
+        ...feed('lobsters', ['comunidade']),
+        spaceId: 'computing',
+        url: 'https://lobste.rs/rss',
+        title: 'Lobsters',
+      },
+    ],
+    LEGACY_COMPUTING_CATALOG,
+    'computing',
+    { allowHttp: false },
+  );
+  assert.ok(merged.feeds.some((f) => f.title === 'React Blog'));
+  assert.ok(merged.feeds.some((f) => f.title === 'web.dev'));
+}
+
+// current schema migrate does not restore tombstoned URLs or flip disabled feeds
+{
+  const disabledUrl = 'https://g1.globo.com/dynamo/rss2.xml';
+  const removedUrl = 'https://g1.globo.com/dynamo/globonews/rss2.xml';
+  const migrated = migrateBlob({
+    schemaVersion: 14,
+    feeds: [
+      {
+        id: 'g1',
+        title: 'G1',
+        url: disabledUrl,
+        spaceId: 'general',
+        folderIds: ['general-portais'],
+        tagIds: [],
+        enabled: false,
+      },
+    ],
+    items: [],
+    folders: [
+      {
+        id: 'general-portais',
+        name: 'Portais',
+        spaceId: 'general',
+        sortOrder: 0,
+      },
+    ],
+    tags: [],
+    settings: {
+      seeded: true,
+      seededGeneral: true,
+      removedFeedUrls: [normalizeFeedUrl(removedUrl)],
+    },
+  });
+  assert.equal(migrated.feeds.find((f) => f.id === 'g1')?.enabled, false);
+  assert.ok(!migrated.feeds.some((f) => /globonews/i.test(f.url)));
+  assert.ok(
+    migrated.settings.removedFeedUrls.includes(normalizeFeedUrl(removedUrl)),
+  );
+  // Public lean catalog is not re-merged on schema 14.
+  assert.equal(migrated.feeds.length, 1);
+}
+
+// public catalogs stay lean (2 example feeds each)
+{
+  assert.equal(
+    COMPUTING_FEED_CATALOG.folders.reduce((n, f) => n + f.feeds.length, 0),
+    2,
+  );
+  assert.equal(
+    GENERAL_FEED_CATALOG.folders.reduce((n, f) => n + f.feeds.length, 0),
+    2,
+  );
 }
 
 // migrate v14 rewrites Google Developers Blog URL
@@ -749,7 +878,8 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     !migrated.feeds.some(
       (f) =>
         normalizeFeedUrl(f.url) === GOOGLE_DEVELOPERS_BLOG_OLD_URL ||
-        normalizeFeedUrl(f.url) === normalizeFeedUrl(GOOGLE_DEVELOPERS_BLOG_URL),
+        normalizeFeedUrl(f.url) ===
+          normalizeFeedUrl(GOOGLE_DEVELOPERS_BLOG_URL),
     ),
   );
   assert.ok(migrated.feeds.some((f) => f.id === 'lobsters'));

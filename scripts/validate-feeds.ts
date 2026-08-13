@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseOpml, flattenOpmlFeeds } from '../src/lib/opml/index';
+import type { FeedCatalog } from '../src/data/feeds/types';
 import { parseFeedXml } from '../src/lib/rss/parseFeedXml';
 import { safeFetch } from '../src/lib/security/safeFetch';
+import { flattenCatalogFeeds } from './catalogJson';
 
-const OPML_PATH =
-  process.argv[2] ?? join(__dirname, '../src/data/default-feeds.opml');
+const CATALOG_PATH =
+  process.argv[2] ?? join(__dirname, '../src/data/feeds/computing.json');
 
 type Result = {
   title: string;
@@ -53,9 +54,9 @@ async function validateFeed(
 }
 
 async function main() {
-  const opml = readFileSync(OPML_PATH, 'utf8');
-  const feeds = flattenOpmlFeeds(parseOpml(opml));
-  console.log(`Validating ${feeds.length} feeds from ${OPML_PATH}\n`);
+  const catalog = JSON.parse(readFileSync(CATALOG_PATH, 'utf8')) as FeedCatalog;
+  const feeds = flattenCatalogFeeds(catalog);
+  console.log(`Validating ${feeds.length} feeds from ${CATALOG_PATH}\n`);
 
   const results: Result[] = [];
   for (const feed of feeds) {
@@ -79,4 +80,4 @@ async function main() {
   }
 }
 
-main();
+void main();

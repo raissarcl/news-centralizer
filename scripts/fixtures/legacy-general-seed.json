@@ -1,0 +1,84 @@
+{
+  "folders": [
+    {
+      "name": "Portais",
+      "feeds": [
+        {
+          "title": "CNN Brasil",
+          "url": "https://www.cnnbrasil.com.br/feed/",
+          "siteUrl": "https://www.cnnbrasil.com.br/"
+        },
+        {
+          "title": "Agência Brasil",
+          "url": "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml",
+          "siteUrl": "https://agenciabrasil.ebc.com.br/"
+        },
+        {
+          "title": "BBC Brasil",
+          "url": "https://feeds.bbci.co.uk/portuguese/rss.xml",
+          "siteUrl": "https://www.bbc.com/portuguese"
+        },
+        {
+          "title": "Metrópole Online",
+          "url": "https://metropoleonline.com.br/rss/latest-posts",
+          "siteUrl": "https://metropoleonline.com.br/"
+        }
+      ]
+    },
+    {
+      "name": "Cultura pop",
+      "feeds": [
+        {
+          "title": "POPline",
+          "url": "https://portalpopline.com.br/feed/",
+          "siteUrl": "https://portalpopline.com.br/"
+        },
+        {
+          "title": "Rolling Stone Brasil",
+          "url": "https://rollingstone.com.br/feed/",
+          "siteUrl": "https://rollingstone.com.br/"
+        },
+        {
+          "title": "Tracklist",
+          "url": "https://tracklist.com.br/feed/",
+          "siteUrl": "https://tracklist.com.br/"
+        },
+        {
+          "title": "Tenho Mais Discos Que Amigos",
+          "url": "https://www.tenhomaisdiscosqueamigos.com/feed/",
+          "siteUrl": "https://www.tenhomaisdiscosqueamigos.com/"
+        },
+        {
+          "title": "G1 Pop & Arte",
+          "url": "https://g1.globo.com/dynamo/pop-arte/rss2.xml",
+          "siteUrl": "https://g1.globo.com/pop-arte/"
+        },
+        {
+          "title": "UOL Entretenimento",
+          "url": "https://rss.uol.com.br/feed/entretenimento.xml",
+          "siteUrl": "https://www.uol.com.br/splash/"
+        },
+        {
+          "title": "Contigo!",
+          "url": "https://www.contigo.com.br/feed/",
+          "siteUrl": "https://www.contigo.com.br/"
+        },
+        {
+          "title": "Papel Pop",
+          "url": "https://www.papelpop.com/feed/",
+          "siteUrl": "https://www.papelpop.com/"
+        },
+        {
+          "title": "Gshow",
+          "url": "https://gshow.globo.com/rss/gshow/",
+          "siteUrl": "https://gshow.globo.com/"
+        },
+        {
+          "title": "Pipoca Moderna",
+          "url": "https://www.pipocamoderna.com.br/feed/",
+          "siteUrl": "https://www.pipocamoderna.com.br/"
+        }
+      ]
+    }
+  ]
+}
