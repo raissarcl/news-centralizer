@@ -1,4 +1,37 @@
 import {
+  COMPUTING_FEED_CATALOG,
+  GENERAL_FEED_CATALOG,
+} from '../data/feeds/catalogs';
+import {
+  inboxFolderId,
+  isInboxFolderId,
+  LEGACY_INBOX_FOLDER_ID,
+  normalizeFeedFolderIds,
+} from '../lib/feeds/feedFolders';
+import {
+  extractMarksFromItems,
+  normalizeReadKeys,
+  normalizeStarredItems,
+} from '../lib/items/itemMarks';
+import { sortItemsByPublishedDesc } from '../lib/items/sortItems';
+import {
+  INBOX_FOLDER_NAME,
+  mergeMissingSeedFeeds,
+} from '../lib/opml/seedFromOpml';
+import {
+  applySubscriptionIntent,
+  disabledUrlsFromFeeds,
+  normalizeUrlList,
+  unionUrlLists,
+} from '../lib/feeds/subscriptionIntent';
+import { IMPORT_LIMITS } from '../lib/security/importLimits';
+import { validateFeedUrl, validateItemLink } from '../lib/security/urls';
+import {
+  COMPUTING_SPACE_ID,
+  GENERAL_SPACE_ID,
+  getDefaultSpaces,
+} from '../lib/spaces';
+import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SETTINGS,
   type FeedItem,
@@ -9,34 +42,12 @@ import {
   type Space,
   type Tag,
 } from '../types';
-import { validateFeedUrl, validateItemLink } from '../lib/security/urls';
-import { IMPORT_LIMITS } from '../lib/security/importLimits';
-import { sortItemsByPublishedDesc } from '../lib/items/sortItems';
-import {
-  inboxFolderId,
-  isInboxFolderId,
-  LEGACY_INBOX_FOLDER_ID,
-  normalizeFeedFolderIds,
-} from '../lib/feeds/feedFolders';
-import {
-  COMPUTING_SPACE_ID,
-  GENERAL_SPACE_ID,
-  getDefaultSpaces,
-} from '../lib/spaces';
-import {
-  INBOX_FOLDER_NAME,
-  mergeMissingSeedFeeds,
-} from '../lib/opml/seedFromOpml';
-import {
-  COMPUTING_FEED_CATALOG,
-  GENERAL_FEED_CATALOG,
-} from '../data/feeds/catalogs';
 import {
   applyCatalogRepairs,
   dedupeHnAndItems,
+  ensureHnFrontpageFeed,
   getFeedFolderIdsFromLegacy,
   mergeEngBlogsIntoBlob,
-  ensureHnFrontpageFeed,
   removeBrokenHnAiFeed,
   removeRetiredCatalogFeeds,
   rewriteGoogleDevelopersBlogUrl,
@@ -49,17 +60,7 @@ export {
 } from './catalogRepairs';
 
 function normalizeRemovedFeedUrls(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const entry of raw) {
-    if (typeof entry !== 'string' || !entry.trim()) continue;
-    const n = entry.trim();
-    if (seen.has(n)) continue;
-    seen.add(n);
-    out.push(n);
-  }
-  return out;
+  return normalizeUrlList(raw);
 }
 
 function normalizeSettings(raw: Partial<Settings> | undefined): Settings {
@@ -93,6 +94,7 @@ function normalizeSettings(raw: Partial<Settings> | undefined): Settings {
         ? merged.activeSpaceId
         : DEFAULT_SETTINGS.activeSpaceId,
     removedFeedUrls: normalizeRemovedFeedUrls(merged.removedFeedUrls),
+    disabledFeedUrls: normalizeUrlList(merged.disabledFeedUrls),
   };
 }
 
@@ -225,33 +227,55 @@ function normalizeTag(raw: unknown): Tag | null {
   };
 }
 
+function emptyBlob(): PersistedBlob {
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    spaces: getDefaultSpaces(),
+    feeds: [],
+    items: [],
+    readKeys: [],
+    starredItems: [],
+    folders: [
+      {
+        id: inboxFolderId(COMPUTING_SPACE_ID),
+        name: INBOX_FOLDER_NAME,
+        spaceId: COMPUTING_SPACE_ID,
+        sortOrder: -1,
+      },
+      {
+        id: inboxFolderId(GENERAL_SPACE_ID),
+        name: INBOX_FOLDER_NAME,
+        spaceId: GENERAL_SPACE_ID,
+        sortOrder: -1,
+      },
+    ],
+    tags: [],
+    settings: { ...DEFAULT_SETTINGS },
+  };
+}
+
+/** Drop full timeline; keep only read/star marks (schema 16+). */
+function slimPersistedItems(blob: PersistedBlob): PersistedBlob {
+  const marks = extractMarksFromItems(
+    blob.items,
+    blob.feeds,
+    blob.readKeys,
+    blob.starredItems,
+  );
+  return {
+    ...blob,
+    items: [],
+    readKeys: marks.readKeys,
+    starredItems: marks.starredItems,
+  };
+}
+
 export function migrateBlob(raw: unknown): PersistedBlob {
   if (!raw || typeof raw !== 'object') {
-    return {
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      spaces: getDefaultSpaces(),
-      feeds: [],
-      items: [],
-      folders: [
-        {
-          id: inboxFolderId(COMPUTING_SPACE_ID),
-          name: INBOX_FOLDER_NAME,
-          spaceId: COMPUTING_SPACE_ID,
-          sortOrder: -1,
-        },
-        {
-          id: inboxFolderId(GENERAL_SPACE_ID),
-          name: INBOX_FOLDER_NAME,
-          spaceId: GENERAL_SPACE_ID,
-          sortOrder: -1,
-        },
-      ],
-      tags: [],
-      settings: { ...DEFAULT_SETTINGS },
-    };
+    return emptyBlob();
   }
 
-  const blob = raw as Partial<PersistedBlob>;
+  const blob = raw as Partial<PersistedBlob> & Record<string, unknown>;
   const version =
     typeof blob.schemaVersion === 'number' ? blob.schemaVersion : 0;
   const settings = normalizeSettings(blob.settings);
@@ -277,12 +301,16 @@ export function migrateBlob(raw: unknown): PersistedBlob {
   const spaces = Array.isArray(blob.spaces)
     ? blob.spaces.map(normalizeSpace).filter((s): s is Space => s !== null)
     : [];
+  const readKeys = normalizeReadKeys(blob.readKeys);
+  const starredItems = normalizeStarredItems(blob.starredItems);
 
   let migrated: PersistedBlob = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     spaces,
     feeds,
     items: sortItemsByPublishedDesc(items),
+    readKeys,
+    starredItems,
     folders,
     tags,
     settings,
@@ -399,6 +427,62 @@ export function migrateBlob(raw: unknown): PersistedBlob {
     migrated = rewriteGoogleDevelopersBlogUrl(migrated);
   }
 
+  if (version < 15) {
+    // Restore missing general-catalog feeds after lean-seed builds (respects tombstones).
+    const merged = mergeMissingSeedFeeds(
+      migrated.folders,
+      migrated.feeds,
+      GENERAL_FEED_CATALOG,
+      GENERAL_SPACE_ID,
+      {
+        allowHttp: migrated.settings.allowHttpFeeds,
+        removedFeedUrls: migrated.settings.removedFeedUrls,
+      },
+    );
+    migrated = {
+      ...migrated,
+      folders: merged.folders,
+      feeds: merged.feeds,
+      settings: {
+        ...migrated.settings,
+        seededGeneral: true,
+      },
+    };
+  }
+
   // Always-on catalog repairs (spaces/inboxes + known broken URL rewrites).
-  return applyCatalogRepairs(migrated);
+  migrated = applyCatalogRepairs(migrated);
+
+  if (version < 17) {
+    migrated = {
+      ...migrated,
+      settings: {
+        ...migrated.settings,
+        disabledFeedUrls: unionUrlLists(
+          migrated.settings.disabledFeedUrls,
+          disabledUrlsFromFeeds(migrated.feeds),
+        ),
+        // One-time: land existing installs on Geral. Later switches persist.
+        activeSpaceId:
+          migrated.settings.activeSpaceId === COMPUTING_SPACE_ID
+            ? GENERAL_SPACE_ID
+            : migrated.settings.activeSpaceId,
+      },
+    };
+  }
+
+  const intentFeeds = applySubscriptionIntent(
+    migrated.feeds,
+    migrated.settings,
+  );
+  const feedIds = new Set(intentFeeds.map((f) => f.id));
+  migrated = {
+    ...migrated,
+    feeds: intentFeeds,
+    items: migrated.items.filter((i) => feedIds.has(i.feedId)),
+  };
+
+  // Drop full timeline into compact read/star marks (also re-runs for v16+
+  // if a legacy backup still carries a fat items[]).
+  return slimPersistedItems(migrated);
 }

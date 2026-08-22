@@ -6,15 +6,15 @@ export const GENERAL_SPACE_ID = 'general';
 
 const ALL_DEFAULT_SPACES: Space[] = [
   {
-    id: COMPUTING_SPACE_ID,
-    name: 'Computação',
-    icon: 'code-slash-outline',
-    sortOrder: 0,
-  },
-  {
     id: GENERAL_SPACE_ID,
     name: 'Geral',
     icon: 'newspaper-outline',
+    sortOrder: 0,
+  },
+  {
+    id: COMPUTING_SPACE_ID,
+    name: 'Computação',
+    icon: 'code-slash-outline',
     sortOrder: 1,
   },
 ];
@@ -51,7 +51,8 @@ export function ensureDefaultSpaces(spaces: Space[] | undefined): Space[] {
   const byId = new Map(spaces.map((s) => [s.id, s]));
   const merged = defaults.map((def) => {
     const existing = byId.get(def.id);
-    return existing ? { ...def, ...existing, id: def.id } : { ...def };
+    // Default sortOrder/name/icon win so Geral stays first in the switcher.
+    return existing ? { ...existing, ...def, id: def.id } : { ...def };
   });
   for (const space of spaces) {
     if (!merged.some((s) => s.id === space.id)) {
@@ -71,5 +72,5 @@ export function resolveActiveSpaceId(
   if (activeSpaceId && spaces.some((s) => s.id === activeSpaceId)) {
     return activeSpaceId;
   }
-  return spaces[0]?.id ?? COMPUTING_SPACE_ID;
+  return spaces[0]?.id ?? GENERAL_SPACE_ID;
 }

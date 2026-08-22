@@ -1,5 +1,3 @@
-import { isGeneralOnly } from '@/lib/appMode';
-
 export type ThemeMode = 'system' | 'light' | 'dark';
 
 export type Space = {
@@ -39,6 +37,16 @@ export type FeedItem = {
   starred: boolean;
 };
 
+/** Compact starred row kept across sessions (timeline itself is not persisted). */
+export type SlimStarredItem = {
+  id: string;
+  feedId: string;
+  title: string;
+  link: string;
+  publishedAt: string;
+  imageUrl?: string;
+};
+
 export type Folder = {
   id: string;
   name: string;
@@ -69,19 +77,26 @@ export type Settings = {
   activeSpaceId: string;
   /** Normalized feed URLs the user deleted; seed merges must not restore them. */
   removedFeedUrls: string[];
+  /** Normalized feed URLs the user disabled; hydrate must not re-enable them. */
+  disabledFeedUrls: string[];
 };
 
 export type PersistedBlob = {
   schemaVersion: number;
   spaces: Space[];
   feeds: FeedSource[];
+  /** Always empty on save — timeline lives in memory only. Kept for backup compat. */
   items: FeedItem[];
+  /** Keys `spaceId::normalizedLink` for items marked read. */
+  readKeys: string[];
+  /** Slim starred items so favorites survive across refreshes/restarts. */
+  starredItems: SlimStarredItem[];
   folders: Folder[];
   tags: Tag[];
   settings: Settings;
 };
 
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 17;
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -94,8 +109,9 @@ export const DEFAULT_SETTINGS: Settings = {
   lastExportAt: null,
   seeded: false,
   seededGeneral: false,
-  activeSpaceId: isGeneralOnly() ? 'general' : 'computing',
+  activeSpaceId: 'general',
   removedFeedUrls: [],
+  disabledFeedUrls: [],
 };
 
 export type TimelineFilter = 'all' | 'unread' | 'read' | 'starred';

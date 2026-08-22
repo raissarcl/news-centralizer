@@ -55,14 +55,34 @@ import {
   getDefaultSpaces,
   resolveActiveSpaceId,
 } from '../lib/spaces';
-import type { FeedItem, FeedSource, Folder, Space, Tag } from '../types';
+import type {
+  FeedItem,
+  FeedSource,
+  Folder,
+  SlimStarredItem,
+  Space,
+  Tag,
+} from '../types';
+import {
+  addUrlToList,
+  removeUrlFromList,
+} from '../lib/feeds/subscriptionIntent';
 import {
   hydrateApp,
   persistApp,
   resolveActiveSpaceFromStores,
+  runPersistedMutation,
 } from './persistApp';
 import { useSettingsStore } from './settings';
 import { useTimelineUiStore } from './timelineUi';
+import {
+  addReadKey,
+  pruneReadKeysToItems,
+  removeReadKey,
+  removeStarred,
+  spaceLinkKey,
+  upsertStarred,
+} from '../lib/items/itemMarks';
 
 export { filterItemsForFeed, filterItemsForFolder, selectVisibleItems };
 export {
@@ -120,9 +140,40 @@ function createThrottledProgress(
 }
 
 function persistAfterRefresh(): void {
+  const state = useFeedsStore.getState();
+  const pruned = pruneReadKeysToItems(state.readKeys, state.items, state.feeds);
+  if (pruned.length !== state.readKeys.length) {
+    useFeedsStore.setState({ readKeys: pruned });
+  }
   void persistApp().then(() => {
     void afterDataChange();
   });
+}
+
+function starredLinkKeySet(
+  starredItems: SlimStarredItem[],
+  feeds: FeedSource[],
+): Set<string> {
+  const feedSpace = new Map(feeds.map((f) => [f.id, f.spaceId]));
+  const keys = new Set<string>();
+  for (const slim of starredItems) {
+    const spaceId = feedSpace.get(slim.feedId);
+    if (!spaceId) continue;
+    const key = spaceLinkKey(spaceId, slim.link);
+    if (key) keys.add(key);
+  }
+  return keys;
+}
+
+function refreshMarkOptions(state: {
+  readKeys: string[];
+  starredItems: SlimStarredItem[];
+  feeds: FeedSource[];
+}) {
+  return {
+    readKeys: new Set(state.readKeys),
+    starredLinkKeys: starredLinkKeySet(state.starredItems, state.feeds),
+  };
 }
 
 function feedUrlOptions() {
@@ -137,35 +188,63 @@ function otherSpaceId(activeSpaceId: string, spaces: Space[]): string | null {
 
 /** Record a deleted feed URL so seed merges do not restore it. */
 function rememberRemovedFeedUrl(url: string): void {
-  const normalized = normalizeFeedUrl(url);
-  if (!normalized) return;
   const settings = useSettingsStore.getState().settings;
-  const toAdd = feedUrlAliases(normalized).filter(
-    (u) => !settings.removedFeedUrls.includes(u),
-  );
-  if (toAdd.length === 0) return;
+  const removedFeedUrls = addUrlToList(settings.removedFeedUrls, url);
+  const disabledFeedUrls = removeUrlFromList(settings.disabledFeedUrls, url);
+  if (
+    removedFeedUrls === settings.removedFeedUrls &&
+    disabledFeedUrls === settings.disabledFeedUrls
+  ) {
+    return;
+  }
   useSettingsStore.setState({
     settings: {
       ...settings,
-      removedFeedUrls: [...settings.removedFeedUrls, ...toAdd],
+      removedFeedUrls,
+      disabledFeedUrls,
     },
+  });
+}
+
+function rememberDisabledFeedUrl(url: string): void {
+  const settings = useSettingsStore.getState().settings;
+  const disabledFeedUrls = addUrlToList(settings.disabledFeedUrls, url);
+  if (disabledFeedUrls === settings.disabledFeedUrls) return;
+  useSettingsStore.setState({
+    settings: { ...settings, disabledFeedUrls },
+  });
+}
+
+function clearDisabledFeedUrl(url: string): void {
+  const settings = useSettingsStore.getState().settings;
+  const disabledFeedUrls = removeUrlFromList(settings.disabledFeedUrls, url);
+  if (disabledFeedUrls === settings.disabledFeedUrls) return;
+  useSettingsStore.setState({
+    settings: { ...settings, disabledFeedUrls },
   });
 }
 
 /** Allow a URL to be seeded/added again after the user re-adds it. */
 function clearRemovedFeedUrls(urls: string[]): void {
-  const toClear = new Set<string>();
+  let settings = useSettingsStore.getState().settings;
+  let removed = settings.removedFeedUrls;
+  let disabled = settings.disabledFeedUrls;
   for (const url of urls) {
-    const normalized = normalizeFeedUrl(url);
-    if (!normalized) continue;
-    for (const alias of feedUrlAliases(normalized)) toClear.add(alias);
+    removed = removeUrlFromList(removed, url);
+    disabled = removeUrlFromList(disabled, url);
   }
-  if (toClear.size === 0) return;
-  const settings = useSettingsStore.getState().settings;
-  const next = settings.removedFeedUrls.filter((u) => !toClear.has(u));
-  if (next.length === settings.removedFeedUrls.length) return;
+  if (
+    removed === settings.removedFeedUrls &&
+    disabled === settings.disabledFeedUrls
+  ) {
+    return;
+  }
   useSettingsStore.setState({
-    settings: { ...settings, removedFeedUrls: next },
+    settings: {
+      ...settings,
+      removedFeedUrls: removed,
+      disabledFeedUrls: disabled,
+    },
   });
 }
 
@@ -197,6 +276,8 @@ type FeedsState = {
   spaces: Space[];
   feeds: FeedSource[];
   items: FeedItem[];
+  readKeys: string[];
+  starredItems: SlimStarredItem[];
   folders: Folder[];
   tags: Tag[];
   hydrated: boolean;
@@ -262,6 +343,8 @@ type FeedsState = {
     items: FeedItem[];
     folders: Folder[];
     tags: Tag[];
+    readKeys?: string[];
+    starredItems?: SlimStarredItem[];
   }) => Promise<void>;
 };
 
@@ -269,6 +352,8 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
   spaces: getDefaultSpaces(),
   feeds: [],
   items: [],
+  readKeys: [],
+  starredItems: [],
   folders: [],
   tags: [],
   hydrated: false,
@@ -302,26 +387,33 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       COMPUTING_SPACE_ID,
       feedUrlOptions(),
     );
-    const seedFeeds = filterSeedFeedsAgainstRemoved(
-      seeded.feeds,
-      settings.removedFeedUrls,
-    );
+    const seedFeeds = filterSeedFeedsAgainstRemoved(seeded.feeds, [
+      ...settings.removedFeedUrls,
+      ...settings.disabledFeedUrls,
+    ]);
     const spaces = ensureDefaultSpaces(get().spaces);
-    set({
-      spaces,
-      folders: ensureSpaceInboxes(
-        [
-          ...get().folders.filter((f) => f.spaceId !== COMPUTING_SPACE_ID),
-          ...seeded.folders,
-        ],
+    await runPersistedMutation(() => {
+      set({
         spaces,
-      ),
-      feeds: [
-        ...get().feeds.filter((f) => f.spaceId !== COMPUTING_SPACE_ID),
-        ...seedFeeds,
-      ],
+        folders: ensureSpaceInboxes(
+          [
+            ...get().folders.filter((f) => f.spaceId !== COMPUTING_SPACE_ID),
+            ...seeded.folders,
+          ],
+          spaces,
+        ),
+        feeds: [
+          ...get().feeds.filter((f) => f.spaceId !== COMPUTING_SPACE_ID),
+          ...seedFeeds,
+        ],
+      });
+      useSettingsStore.setState({
+        settings: {
+          ...useSettingsStore.getState().settings,
+          seeded: true,
+        },
+      });
     });
-    await useSettingsStore.getState().update({ seeded: true });
   },
 
   seedGeneralIfNeeded: async () => {
@@ -341,26 +433,33 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       GENERAL_SPACE_ID,
       feedUrlOptions(),
     );
-    const seedFeeds = filterSeedFeedsAgainstRemoved(
-      seeded.feeds,
-      settings.removedFeedUrls,
-    );
+    const seedFeeds = filterSeedFeedsAgainstRemoved(seeded.feeds, [
+      ...settings.removedFeedUrls,
+      ...settings.disabledFeedUrls,
+    ]);
     const spaces = ensureDefaultSpaces(get().spaces);
-    set({
-      spaces,
-      folders: ensureSpaceInboxes(
-        [
-          ...get().folders.filter((f) => f.spaceId !== GENERAL_SPACE_ID),
-          ...seeded.folders,
-        ],
+    await runPersistedMutation(() => {
+      set({
         spaces,
-      ),
-      feeds: [
-        ...get().feeds.filter((f) => f.spaceId !== GENERAL_SPACE_ID),
-        ...seedFeeds,
-      ],
+        folders: ensureSpaceInboxes(
+          [
+            ...get().folders.filter((f) => f.spaceId !== GENERAL_SPACE_ID),
+            ...seeded.folders,
+          ],
+          spaces,
+        ),
+        feeds: [
+          ...get().feeds.filter((f) => f.spaceId !== GENERAL_SPACE_ID),
+          ...seedFeeds,
+        ],
+      });
+      useSettingsStore.setState({
+        settings: {
+          ...useSettingsStore.getState().settings,
+          seededGeneral: true,
+        },
+      });
     });
-    await useSettingsStore.getState().update({ seededGeneral: true });
   },
 
   setActiveSpaceId: async (spaceId) => {
@@ -418,6 +517,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         concurrency: REFRESH_BACKGROUND_CONCURRENCY,
         retryOn403: false,
         onFeedBatch,
+        ...refreshMarkOptions(state),
       });
       await applyQueue;
       persistAfterRefresh();
@@ -502,6 +602,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
           set({ refreshProgress: { done, total } }),
         ),
         onFeedBatch,
+        ...refreshMarkOptions(state),
       },
     );
 
@@ -568,6 +669,7 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         retryOn403: true,
         onProgress: () => set({ refreshProgress: { done: 1, total: 1 } }),
         onFeedBatch,
+        ...refreshMarkOptions(state),
       },
     );
 
@@ -585,65 +687,91 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
   },
 
   markAllReadInFolder: async (folderId) => {
-    const feedIds = new Set(
-      get()
-        .feeds.filter((f) => feedInFolder(f, folderId))
-        .map((f) => f.id),
-    );
-    set({
-      items: get().items.map((i) =>
-        feedIds.has(i.feedId) ? { ...i, read: true } : i,
-      ),
+    await runPersistedMutation(() => {
+      const state = get();
+      const feedIds = new Set(
+        state.feeds.filter((f) => feedInFolder(f, folderId)).map((f) => f.id),
+      );
+      const feedSpace = new Map(state.feeds.map((f) => [f.id, f.spaceId]));
+      let readKeys = state.readKeys;
+      const nextItems = state.items.map((i) => {
+        if (!feedIds.has(i.feedId)) return i;
+        const spaceId = feedSpace.get(i.feedId);
+        if (spaceId) readKeys = addReadKey(readKeys, spaceId, i.link);
+        return { ...i, read: true };
+      });
+      set({ items: nextItems, readKeys });
     });
-    await persistApp();
     await afterDataChange();
   },
 
   purgeItemsByRetention: async () => {
     const settings = useSettingsStore.getState().settings;
     const before = get().items.length;
-    const nextItems = applyRetention(
-      get().items,
-      settings.retentionDays,
-      get().feeds,
-      get().folders,
-    );
-    set({ items: sortItemsByPublishedDesc(nextItems) });
-    await persistApp();
+    await runPersistedMutation(() => {
+      const nextItems = applyRetention(
+        get().items,
+        settings.retentionDays,
+        get().feeds,
+        get().folders,
+      );
+      const readKeys = pruneReadKeysToItems(
+        get().readKeys,
+        nextItems,
+        get().feeds,
+      );
+      set({ items: sortItemsByPublishedDesc(nextItems), readKeys });
+    });
     await afterDataChange();
-    return { removed: before - nextItems.length, remaining: nextItems.length };
+    return {
+      removed: before - get().items.length,
+      remaining: get().items.length,
+    };
   },
 
   removeReadItems: async () => {
     const spaceId = resolveActiveSpaceFromStores();
+    const state = get();
     const feedIds = new Set(
-      get()
-        .feeds.filter((f) => f.spaceId === spaceId)
-        .map((f) => f.id),
+      state.feeds.filter((f) => f.spaceId === spaceId).map((f) => f.id),
     );
-    const before = get().items.filter((i) => feedIds.has(i.feedId)).length;
-    const nextItems = get().items.filter((i) => {
-      if (!feedIds.has(i.feedId)) return true;
-      return !i.read || i.starred;
+    const before = state.items.filter((i) => feedIds.has(i.feedId)).length;
+    let after = before;
+    await runPersistedMutation(() => {
+      const nextItems = state.items.filter((i) => {
+        if (!feedIds.has(i.feedId)) return true;
+        return !i.read || i.starred;
+      });
+      after = nextItems.filter((i) => feedIds.has(i.feedId)).length;
+      const readKeys = pruneReadKeysToItems(
+        state.readKeys,
+        nextItems,
+        state.feeds,
+      );
+      set({ items: sortItemsByPublishedDesc(nextItems), readKeys });
     });
-    const after = nextItems.filter((i) => feedIds.has(i.feedId)).length;
-    set({ items: sortItemsByPublishedDesc(nextItems) });
-    await persistApp();
     await afterDataChange();
     return before - after;
   },
 
   clearAllItems: async () => {
     const spaceId = resolveActiveSpaceFromStores();
-    const feedIds = new Set(
-      get()
-        .feeds.filter((f) => f.spaceId === spaceId)
-        .map((f) => f.id),
-    );
-    set({
-      items: get().items.filter((i) => !feedIds.has(i.feedId)),
+    await runPersistedMutation(() => {
+      const state = get();
+      const feedIds = new Set(
+        state.feeds.filter((f) => f.spaceId === spaceId).map((f) => f.id),
+      );
+      const nextItems = state.items.filter((i) => !feedIds.has(i.feedId));
+      const starredItems = state.starredItems.filter(
+        (s) => !feedIds.has(s.feedId),
+      );
+      const readKeys = pruneReadKeysToItems(
+        state.readKeys,
+        nextItems,
+        state.feeds,
+      );
+      set({ items: nextItems, starredItems, readKeys });
     });
-    await persistApp();
     await afterDataChange();
   },
 
@@ -660,84 +788,116 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         ? { folderIds: normalizeFeedFolderIds(patch.folderIds, feed.spaceId) }
         : {}),
     };
-    set({
-      feeds: get().feeds.map((f) =>
-        f.id === feedId
-          ? {
-              ...f,
-              ...normalizedPatch,
-              favicon:
-                patch.siteUrl || patch.url
-                  ? faviconUrlForFeed(
-                      patch.siteUrl ?? f.siteUrl,
-                      patch.url ?? f.url,
-                    )
-                  : f.favicon,
-            }
-          : f,
-      ),
+    await runPersistedMutation(() => {
+      set({
+        feeds: get().feeds.map((f) =>
+          f.id === feedId
+            ? {
+                ...f,
+                ...normalizedPatch,
+                favicon:
+                  patch.siteUrl || patch.url
+                    ? faviconUrlForFeed(
+                        patch.siteUrl ?? f.siteUrl,
+                        patch.url ?? f.url,
+                      )
+                    : f.favicon,
+              }
+            : f,
+        ),
+      });
     });
-    await persistApp();
   },
 
   toggleFeedEnabled: async (feedId) => {
-    set({
-      feeds: get().feeds.map((f) =>
-        f.id === feedId ? { ...f, enabled: !f.enabled } : f,
-      ),
+    const feed = get().feeds.find((f) => f.id === feedId);
+    if (!feed) return;
+    const nextEnabled = !feed.enabled;
+    await runPersistedMutation(() => {
+      set({
+        feeds: get().feeds.map((f) =>
+          f.id === feedId ? { ...f, enabled: nextEnabled } : f,
+        ),
+      });
+      if (nextEnabled) {
+        clearDisabledFeedUrl(feed.url);
+      } else {
+        rememberDisabledFeedUrl(feed.url);
+      }
     });
-    await persistApp();
   },
 
   resumeFeed: async (feedId) => {
-    set({
-      feeds: get().feeds.map((f) =>
-        f.id === feedId
-          ? {
-              ...f,
-              refreshFailCount: 0,
-              refreshPausedUntil: undefined,
-              lastError: undefined,
-            }
-          : f,
-      ),
+    await runPersistedMutation(() => {
+      set({
+        feeds: get().feeds.map((f) =>
+          f.id === feedId
+            ? {
+                ...f,
+                refreshFailCount: 0,
+                refreshPausedUntil: undefined,
+                lastError: undefined,
+              }
+            : f,
+        ),
+      });
     });
-    await persistApp();
   },
 
   resumeAllPausedFeeds: async () => {
     const now = Date.now();
-    set({
-      feeds: get().feeds.map((f) => {
-        const paused =
-          f.refreshPausedUntil &&
-          new Date(f.refreshPausedUntil).getTime() > now;
-        if (!paused) return f;
-        return {
-          ...f,
-          refreshFailCount: 0,
-          refreshPausedUntil: undefined,
-          lastError: undefined,
-        };
-      }),
+    await runPersistedMutation(() => {
+      set({
+        feeds: get().feeds.map((f) => {
+          const paused =
+            f.refreshPausedUntil &&
+            new Date(f.refreshPausedUntil).getTime() > now;
+          if (!paused) return f;
+          return {
+            ...f,
+            refreshFailCount: 0,
+            refreshPausedUntil: undefined,
+            lastError: undefined,
+          };
+        }),
+      });
     });
-    await persistApp();
   },
 
   markItemRead: async (itemId, read = true) => {
-    set({
-      items: get().items.map((i) => (i.id === itemId ? { ...i, read } : i)),
+    const state = get();
+    const item = state.items.find((i) => i.id === itemId);
+    if (!item) return;
+    await runPersistedMutation(() => {
+      const spaceId = state.feeds.find((f) => f.id === item.feedId)?.spaceId;
+      let readKeys = state.readKeys;
+      if (spaceId) {
+        readKeys = read
+          ? addReadKey(readKeys, spaceId, item.link)
+          : removeReadKey(readKeys, spaceId, item.link);
+      }
+      set({
+        items: get().items.map((i) => (i.id === itemId ? { ...i, read } : i)),
+        readKeys,
+      });
     });
-    await persistApp();
   },
 
   toggleItemStarred: async (itemId) => {
-    set({
-      items: get().items.map((i) =>
-        i.id === itemId ? { ...i, starred: !i.starred } : i,
-      ),
+    const state = get();
+    const item = state.items.find((i) => i.id === itemId);
+    if (!item) return;
+    await runPersistedMutation(() => {
+      const nextStarred = !item.starred;
+      const nextItem = { ...item, starred: nextStarred };
+      const current = get();
+      set({
+        items: current.items.map((i) => (i.id === itemId ? nextItem : i)),
+        starredItems: nextStarred
+          ? upsertStarred(current.starredItems, nextItem)
+          : removeStarred(current.starredItems, itemId),
+      });
     });
-    await persistApp();
   },
 
   addFeed: async (input) => {
@@ -753,14 +913,19 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       (f) => f.url === href && f.spaceId === feedSpaceId,
     );
     if (existing) {
-      if (feedInFolder(existing, input.folderId)) return 'duplicate';
-      set({
-        feeds: get().feeds.map((f) =>
-          f.id === existing.id ? addFeedToFolder(f, input.folderId) : f,
-        ),
+      if (feedInFolder(existing, input.folderId) && existing.enabled) {
+        return 'duplicate';
+      }
+      await runPersistedMutation(() => {
+        set({
+          feeds: get().feeds.map((f) =>
+            f.id === existing.id
+              ? { ...addFeedToFolder(f, input.folderId), enabled: true }
+              : f,
+          ),
+        });
+        clearRemovedFeedUrl(href);
       });
-      clearRemovedFeedUrl(href);
-      await persistApp();
       return 'ok';
     }
 
@@ -775,22 +940,29 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       tagIds: input.tagIds ?? [],
       enabled: true,
     };
-    set({ feeds: [...get().feeds, feed] });
-    clearRemovedFeedUrl(href);
-    await persistApp();
+    await runPersistedMutation(() => {
+      set({ feeds: [...get().feeds, feed] });
+      clearRemovedFeedUrl(href);
+    });
     return 'ok';
   },
 
   removeFeed: async (feedId) => {
-    const removed = get().feeds.find((f) => f.id === feedId);
-    set({
-      feeds: get().feeds.filter((f) => f.id !== feedId),
-      items: get().items.filter((i) => i.feedId !== feedId),
+    await runPersistedMutation(() => {
+      const state = get();
+      const removed = state.feeds.find((f) => f.id === feedId);
+      const nextItems = state.items.filter((i) => i.feedId !== feedId);
+      const nextFeeds = state.feeds.filter((f) => f.id !== feedId);
+      set({
+        feeds: nextFeeds,
+        items: nextItems,
+        starredItems: state.starredItems.filter((s) => s.feedId !== feedId),
+        readKeys: pruneReadKeysToItems(state.readKeys, nextItems, nextFeeds),
+      });
+      if (removed) {
+        rememberRemovedFeedUrl(removed.url);
+      }
     });
-    if (removed) {
-      rememberRemovedFeedUrl(removed.url);
-    }
-    await persistApp();
   },
 
   addFolder: async (name) => {
@@ -803,19 +975,21 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       spaceId,
       sortOrder: get().folders.filter((f) => f.spaceId === spaceId).length,
     };
-    set({ folders: [...get().folders, folder] });
-    await persistApp();
+    await runPersistedMutation(() => {
+      set({ folders: [...get().folders, folder] });
+    });
   },
 
   renameFolder: async (folderId, name) => {
     const trimmed = name.trim();
     if (!trimmed || isInboxFolderId(folderId)) return;
-    set({
-      folders: get().folders.map((f) =>
-        f.id === folderId ? { ...f, name: trimmed } : f,
-      ),
+    await runPersistedMutation(() => {
+      set({
+        folders: get().folders.map((f) =>
+          f.id === folderId ? { ...f, name: trimmed } : f,
+        ),
+      });
     });
-    await persistApp();
   },
 
   removeFolder: async (folderId) => {
@@ -823,37 +997,39 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     const folder = get().folders.find((f) => f.id === folderId);
     if (!folder) return;
     const inboxId = inboxFolderId(folder.spaceId);
-    const folders = ensureInboxFolder(
-      get().folders.filter((f) => f.id !== folderId),
-      folder.spaceId,
-    );
-    set({
-      folders,
-      feeds: get().feeds.map((f) => {
-        if (!feedInFolder(f, folderId)) return f;
-        const next = removeFeedFromFolder(f, folderId);
-        if (getFeedFolderIds(next).length > 0) return next;
-        return addFeedToFolder(f, inboxId);
-      }),
+    await runPersistedMutation(() => {
+      const folders = ensureInboxFolder(
+        get().folders.filter((f) => f.id !== folderId),
+        folder.spaceId,
+      );
+      set({
+        folders,
+        feeds: get().feeds.map((f) => {
+          if (!feedInFolder(f, folderId)) return f;
+          const next = removeFeedFromFolder(f, folderId);
+          if (getFeedFolderIds(next).length > 0) return next;
+          return addFeedToFolder(f, inboxId);
+        }),
+      });
     });
-    await persistApp();
   },
 
   updateFolderRetention: async (folderId, retentionDays) => {
-    set({
-      folders: get().folders.map((f) =>
-        f.id === folderId
-          ? {
-              ...f,
-              retentionDays:
-                retentionDays != null && retentionDays > 0
-                  ? retentionDays
-                  : undefined,
-            }
-          : f,
-      ),
+    await runPersistedMutation(() => {
+      set({
+        folders: get().folders.map((f) =>
+          f.id === folderId
+            ? {
+                ...f,
+                retentionDays:
+                  retentionDays != null && retentionDays > 0
+                    ? retentionDays
+                    : undefined,
+              }
+            : f,
+        ),
+      });
     });
-    await persistApp();
   },
 
   toggleFeedFolder: async (feedId, folderId) => {
@@ -863,10 +1039,11 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     if (folder.spaceId !== feed.spaceId) return false;
     const next = toggleFeedFolderMembership(feed, folderId);
     if (!next) return false;
-    set({
-      feeds: get().feeds.map((f) => (f.id === feedId ? next : f)),
+    await runPersistedMutation(() => {
+      set({
+        feeds: get().feeds.map((f) => (f.id === feedId ? next : f)),
+      });
     });
-    await persistApp();
     return true;
   },
 
@@ -880,30 +1057,33 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
       spaceId,
       color,
     };
-    set({ tags: [...get().tags, tag] });
-    await persistApp();
+    await runPersistedMutation(() => {
+      set({ tags: [...get().tags, tag] });
+    });
   },
 
   renameTag: async (tagId, name) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    set({
-      tags: get().tags.map((t) =>
-        t.id === tagId ? { ...t, name: trimmed } : t,
-      ),
+    await runPersistedMutation(() => {
+      set({
+        tags: get().tags.map((t) =>
+          t.id === tagId ? { ...t, name: trimmed } : t,
+        ),
+      });
     });
-    await persistApp();
   },
 
   removeTag: async (tagId) => {
-    set({
-      tags: get().tags.filter((t) => t.id !== tagId),
-      feeds: get().feeds.map((f) => ({
-        ...f,
-        tagIds: f.tagIds.filter((id) => id !== tagId),
-      })),
+    await runPersistedMutation(() => {
+      set({
+        tags: get().tags.filter((t) => t.id !== tagId),
+        feeds: get().feeds.map((f) => ({
+          ...f,
+          tagIds: f.tagIds.filter((id) => id !== tagId),
+        })),
+      });
     });
-    await persistApp();
   },
 
   assignTagsToFeed: async (feedId, tagIds) => {
@@ -915,12 +1095,13 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
         .map((tag) => tag.id),
     );
     const nextTagIds = tagIds.filter((id) => allowed.has(id));
-    set({
-      feeds: get().feeds.map((f) =>
-        f.id === feedId ? { ...f, tagIds: nextTagIds } : f,
-      ),
+    await runPersistedMutation(() => {
+      set({
+        feeds: get().feeds.map((f) =>
+          f.id === feedId ? { ...f, tagIds: nextTagIds } : f,
+        ),
+      });
     });
-    await persistApp();
   },
 
   importOpmlFeeds: async (feedInputs, mode) => {
@@ -929,37 +1110,50 @@ export const useFeedsStore = create<FeedsState>((set, get) => ({
     if (valid.length === 0) return { added: 0, skipped };
 
     const spaceId = resolveActiveSpaceFromStores();
-    const next = applyOpmlImport(
-      {
-        folders: get().folders,
-        feeds: get().feeds,
-        items: get().items,
-        tags: get().tags,
-      },
-      valid,
-      mode,
-      spaceId,
-    );
-    set({
-      folders: next.folders,
-      feeds: next.feeds,
-      items: next.items,
-      tags: next.tags,
+    let added = 0;
+    await runPersistedMutation(() => {
+      if (mode === 'replace') {
+        for (const feed of get().feeds) {
+          if (feed.spaceId === spaceId) rememberRemovedFeedUrl(feed.url);
+        }
+      }
+      const next = applyOpmlImport(
+        {
+          folders: get().folders,
+          feeds: get().feeds,
+          items: get().items,
+          tags: get().tags,
+        },
+        valid,
+        mode,
+        spaceId,
+      );
+      added = next.added;
+      set({
+        folders: next.folders,
+        feeds: next.feeds,
+        items: next.items,
+        tags: next.tags,
+      });
+      clearRemovedFeedUrls(valid.map((f) => f.url));
     });
-    clearRemovedFeedUrls(valid.map((f) => f.url));
-    await persistApp();
-    return { added: next.added, skipped };
+    return { added, skipped };
   },
 
   replaceAll: async (payload) => {
-    set({
-      spaces: ensureDefaultSpaces(payload.spaces ?? get().spaces),
-      feeds: payload.feeds,
-      items: payload.items,
-      folders: payload.folders,
-      tags: payload.tags,
+    const readKeys = payload.readKeys ?? [];
+    const starredItems = payload.starredItems ?? [];
+    await runPersistedMutation(() => {
+      set({
+        spaces: ensureDefaultSpaces(payload.spaces ?? get().spaces),
+        feeds: payload.feeds,
+        items: payload.items,
+        folders: payload.folders,
+        tags: payload.tags,
+        readKeys,
+        starredItems,
+      });
     });
-    await persistApp();
   },
 }));
 

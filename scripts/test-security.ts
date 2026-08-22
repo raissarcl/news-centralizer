@@ -105,12 +105,14 @@ function testBackupMediaUrls() {
         link: 'https://example.com/a',
         imageUrl: 'https://127.0.0.1/tracker.gif',
         publishedAt: '2024-01-01T00:00:00.000Z',
+        starred: true,
       },
     ],
   });
   assert.equal(blob.feeds[0]?.favicon, undefined);
   assert.equal(blob.feeds[0]?.siteUrl, undefined);
-  assert.equal(blob.items[0]?.imageUrl, undefined);
+  assert.equal(blob.items.length, 0);
+  assert.equal(blob.starredItems[0]?.imageUrl, undefined);
 }
 
 testUrls();

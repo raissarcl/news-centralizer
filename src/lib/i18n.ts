@@ -47,7 +47,7 @@ export const t = {
   foldersHint: 'Crie pastas para agrupar feeds. Veja e navegue na aba Pastas.',
   tagsHint: 'Filtre na Timeline. Atribua tags em Fontes → detalhe do feed.',
   backupJsonHint:
-    'Cópia completa: feeds, itens lidos, pastas, tags e configurações.',
+    'Cópia compacta: feeds, lidos/favoritos, pastas, tags e configurações (sem o arquivo completo da timeline).',
   backupJson: 'Backup JSON',
   opmlHint: 'Só lista de feeds — compatível com outros leitores RSS.',
   mergeOpmlHint:
@@ -75,6 +75,15 @@ export const t = {
   save: 'Salvar',
   cancel: 'Cancelar',
   delete: 'Excluir',
+  deleteFeedConfirm:
+    'Remove esta fonte e seus itens. Ela não volta sozinha; só se você adicionar de novo.',
+  persistFailed: 'Não foi possível salvar. A alteração foi desfeita.',
+  sourcesInactive: 'Inativas',
+  sourcesInactiveHint:
+    'Desativadas: não entram na Timeline. Toque em Ativar para voltar.',
+  sourcesInactiveCount: (n: number) =>
+    n === 1 ? '1 fonte inativa' : `${n} fontes inativas`,
+  activateFeed: 'Ativar',
   search: 'Buscar…',
   tags: 'Tags',
   addTag: 'Adicionar tag',
@@ -168,7 +177,7 @@ export const t = {
   sourcesFolderSwitchHint:
     'Nesta pasta organiza; Ativo controla a busca global.',
   sourcesHint:
-    'Filtre por pasta para ver o switch Nesta pasta, ou use Gerenciar feeds na pasta.',
+    'Ativo mostra na Timeline. Desative para guardar em Inativas; exclua para remover de vez.',
   retentionSaved: 'Retenção atualizada',
   retentionInvalid: 'Use um número entre 1 e 365',
   itemsStoredCount: (n: number) =>

@@ -6,27 +6,30 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
 import { FlatList } from 'react-native-gesture-handler';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import {
   FeedItemRow,
   openItemLink,
 } from '@/features/timeline/components/FeedItemRow';
 import { feedInFolder } from '@/lib/feeds/feedFolders';
 import { filterItemsForFeed, useFeedsStore } from '@/store/feeds';
-import { useTheme } from '@/theme';
+import { getSwitchProps, useTheme } from '@/theme';
 import { t } from '@/lib/i18n';
 import { resolveFeedFavicon } from '@/lib/favicon';
 
 export default function SourceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const navigation = useNavigation();
+  const router = useRouter();
   const { tokens } = useTheme();
+  const switchProps = getSwitchProps(tokens);
   const feeds = useFeedsStore((s) => s.feeds);
   const folders = useFeedsStore((s) => s.folders);
   const tags = useFeedsStore((s) => s.tags);
@@ -39,6 +42,8 @@ export default function SourceDetailScreen() {
   const assignTagsToFeed = useFeedsStore((s) => s.assignTagsToFeed);
   const refreshFeed = useFeedsStore((s) => s.refreshFeed);
   const toggleFeedFolder = useFeedsStore((s) => s.toggleFeedFolder);
+  const toggleFeedEnabled = useFeedsStore((s) => s.toggleFeedEnabled);
+  const removeFeed = useFeedsStore((s) => s.removeFeed);
 
   const feed = feeds.find((f) => f.id === id);
   const spaceFolders = useMemo(
@@ -64,7 +69,7 @@ export default function SourceDetailScreen() {
     } catch {
       return `${t.lastFetched}: ${feed.lastFetchedAt}`;
     }
-  }, [feed?.lastFetchedAt]);
+  }, [feed]);
 
   useLayoutEffect(() => {
     if (!feed) return;
@@ -99,6 +104,19 @@ export default function SourceDetailScreen() {
 
   const favicon = resolveFeedFavicon(feed);
 
+  const confirmRemove = () => {
+    Alert.alert(feed.title, t.deleteFeedConfirm, [
+      { text: t.cancel, style: 'cancel' },
+      {
+        text: t.delete,
+        style: 'destructive',
+        onPress: () => {
+          void removeFeed(feed.id).then(() => router.back());
+        },
+      },
+    ]);
+  };
+
   return (
     <FlatList
       style={{ backgroundColor: tokens.bg }}
@@ -117,6 +135,30 @@ export default function SourceDetailScreen() {
           <Text style={[styles.meta, { color: tokens.textFaint }]}>
             {lastFetchedLabel}
           </Text>
+          <View style={styles.actionsRow}>
+            <View style={styles.enabledRow}>
+              <Switch
+                value={feed.enabled}
+                onValueChange={() => void toggleFeedEnabled(feed.id)}
+                accessibilityLabel={`${feed.title} ${feed.enabled ? t.enabled : t.disabled}`}
+                {...switchProps}
+              />
+              <Text style={{ color: tokens.text, fontSize: 14 }}>
+                {feed.enabled ? t.enabled : t.disabled}
+              </Text>
+            </View>
+            <Pressable onPress={confirmRemove} hitSlop={8}>
+              <Text
+                style={{
+                  color: tokens.danger,
+                  fontSize: 14,
+                  fontWeight: '600',
+                }}
+              >
+                {t.delete}
+              </Text>
+            </Pressable>
+          </View>
           <Text
             style={[styles.meta, { color: tokens.textMuted, marginTop: 8 }]}
           >
@@ -229,6 +271,13 @@ const styles = StyleSheet.create({
   favicon: { width: 32, height: 32, borderRadius: 6 },
   url: { fontSize: 12 },
   meta: { fontSize: 12 },
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  enabledRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   tagChip: {
     paddingHorizontal: 10,

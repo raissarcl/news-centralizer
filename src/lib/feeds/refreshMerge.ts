@@ -180,6 +180,10 @@ export type MergeRefreshOptions = {
   concurrency?: number;
   /** Default false for bulk refresh; true for single-feed refresh. */
   retryOn403?: boolean;
+  /** Persisted read marks: `spaceId::normalizedLink`. */
+  readKeys?: ReadonlySet<string>;
+  /** Persisted star marks: `spaceId::normalizedLink`. */
+  starredLinkKeys?: ReadonlySet<string>;
 };
 
 export async function mergeRefreshResults(
@@ -202,6 +206,8 @@ export async function mergeRefreshResults(
     now = Date.now(),
     concurrency = REFRESH_CONCURRENCY,
     retryOn403 = false,
+    readKeys,
+    starredLinkKeys,
   } = options;
 
   const orderedFeeds = sortFeedsByRefreshPriority(enabledFeeds);
@@ -300,6 +306,9 @@ export async function mergeRefreshResults(
         }
 
         if (!existingById.has(entry.id)) {
+          const spaceLinkKey = linkKey
+            ? `${feed.spaceId}::${linkKey}`
+            : null;
           const newItem: FeedItem = {
             id: entry.id,
             feedId: feed.id,
@@ -308,8 +317,10 @@ export async function mergeRefreshResults(
             summary: entry.summary,
             imageUrl: entry.imageUrl,
             publishedAt: entry.publishedAt,
-            read: false,
-            starred: false,
+            read: spaceLinkKey != null && (readKeys?.has(spaceLinkKey) ?? false),
+            starred:
+              spaceLinkKey != null &&
+              (starredLinkKeys?.has(spaceLinkKey) ?? false),
           };
           existingById.set(entry.id, newItem);
           newItems.push(newItem);

@@ -322,6 +322,9 @@ export function migrateToSpaces(blob: PersistedBlob): PersistedBlob {
     removedFeedUrls: Array.isArray(blob.settings.removedFeedUrls)
       ? blob.settings.removedFeedUrls
       : [],
+    disabledFeedUrls: Array.isArray(blob.settings.disabledFeedUrls)
+      ? blob.settings.disabledFeedUrls
+      : [],
   };
 
   return {

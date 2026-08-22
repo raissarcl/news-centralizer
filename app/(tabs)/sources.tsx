@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
 import { useFeedsStore, feedsInSpace, foldersInSpace } from '@/store/feeds';
+import { partitionFeedsByEnabled } from '@/lib/feeds/subscriptionIntent';
 import { useSettingsStore } from '@/store/settings';
 import { resolveActiveSpaceId } from '@/lib/spaces';
 import { useTheme, getSwitchProps } from '@/theme';
@@ -113,6 +114,7 @@ export default function SourcesScreen() {
   const [title, setTitle] = useState('');
   const [folderId, setFolderId] = useState('');
   const [folderFilterId, setFolderFilterId] = useState<string | null>(null);
+  const [inactiveOpen, setInactiveOpen] = useState(true);
 
   const folderById = useMemo(
     () => new Map(folders.map((f) => [f.id, f])),
@@ -128,8 +130,12 @@ export default function SourcesScreen() {
     () => [...feeds].sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')),
     [feeds],
   );
+  const { active: activeFeeds, inactive: inactiveFeeds } = useMemo(
+    () => partitionFeedsByEnabled(sortedFeeds),
+    [sortedFeeds],
+  );
 
-  const health = useMemo(() => computeFeedHealth(feeds), [feeds]);
+  const health = useMemo(() => computeFeedHealth(activeFeeds), [activeFeeds]);
 
   const filteredFolder = folderFilterId
     ? folderById.get(folderFilterId)
@@ -216,7 +222,7 @@ export default function SourcesScreen() {
   };
 
   const confirmRemove = (feedId: string, feedTitle: string) => {
-    Alert.alert(feedTitle, t.delete, [
+    Alert.alert(feedTitle, t.deleteFeedConfirm, [
       { text: t.cancel, style: 'cancel' },
       {
         text: t.delete,
@@ -319,6 +325,63 @@ export default function SourcesScreen() {
             {...switchProps}
           />
         )}
+        <Pressable
+          onPress={() => confirmRemove(item.id, item.title)}
+          hitSlop={8}
+        >
+          <Ionicons name="trash-outline" size={18} color={tokens.danger} />
+        </Pressable>
+      </Pressable>
+    );
+  };
+
+  const renderInactiveRow = (item: FeedSource) => {
+    const folderLabel = formatFeedFolderNames(item, folders);
+    const favicon = resolveFeedFavicon(item);
+    return (
+      <Pressable
+        key={item.id}
+        onPress={() => router.push(`/source/${item.id}`)}
+        style={({ pressed }) => [
+          styles.row,
+          {
+            backgroundColor: tokens.surface,
+            borderColor: tokens.border,
+            opacity: pressed ? 0.85 : 1,
+          },
+        ]}
+      >
+        {favicon ? (
+          <Image source={{ uri: favicon }} style={styles.favicon} />
+        ) : (
+          <View
+            style={[
+              styles.faviconPlaceholder,
+              { backgroundColor: tokens.surfaceAlt },
+            ]}
+          />
+        )}
+        <View style={styles.main}>
+          <Text
+            style={[styles.title, { color: tokens.textMuted }]}
+            numberOfLines={2}
+          >
+            {item.title}
+          </Text>
+          <Text
+            style={[styles.sub, { color: tokens.textFaint }]}
+            numberOfLines={1}
+          >
+            {folderLabel} · {feedHostLabel(item.url)}
+          </Text>
+        </View>
+        <Pressable onPress={() => void toggleFeedEnabled(item.id)} hitSlop={8}>
+          <Text
+            style={{ color: tokens.primary, fontSize: 13, fontWeight: '600' }}
+          >
+            {t.activateFeed}
+          </Text>
+        </Pressable>
         <Pressable
           onPress={() => confirmRemove(item.id, item.title)}
           hitSlop={8}
@@ -435,14 +498,44 @@ export default function SourcesScreen() {
     </View>
   );
 
+  const inactiveSection =
+    inactiveFeeds.length === 0 ? null : (
+      <View style={styles.inactiveSection}>
+        <Pressable
+          onPress={() => setInactiveOpen((open) => !open)}
+          style={styles.inactiveHeader}
+          accessibilityRole="button"
+          accessibilityLabel={t.sourcesInactive}
+        >
+          <Text style={[styles.filterLabel, { color: tokens.textMuted }]}>
+            {t.sourcesInactiveCount(inactiveFeeds.length)}
+          </Text>
+          <Ionicons
+            name={inactiveOpen ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={tokens.textMuted}
+          />
+        </Pressable>
+        {inactiveOpen ? (
+          <>
+            <Text style={[styles.hint, { color: tokens.textFaint }]}>
+              {t.sourcesInactiveHint}
+            </Text>
+            {inactiveFeeds.map((item) => renderInactiveRow(item))}
+          </>
+        ) : null}
+      </View>
+    );
+
   return (
     <View style={[styles.root, { backgroundColor: tokens.bg }]}>
       <FlatList
-        data={sortedFeeds}
+        data={activeFeeds}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={listHeader}
+        ListFooterComponent={inactiveSection}
         contentContainerStyle={
-          sortedFeeds.length === 0 ? styles.emptyList : undefined
+          activeFeeds.length === 0 ? styles.emptyList : undefined
         }
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -526,5 +619,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 10,
+  },
+  inactiveSection: { paddingBottom: 24, gap: 8 },
+  inactiveHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 4,
   },
 });

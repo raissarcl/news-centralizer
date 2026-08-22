@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -7,7 +7,11 @@ import * as Linking from 'expo-linking';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useSettingsStore } from '@/store/settings';
 import { useFeedsStore } from '@/store/feeds';
-import { hydrateApp } from '@/store/persistApp';
+import {
+  hydrateApp,
+  PersistError,
+  setPersistFailureListener,
+} from '@/store/persistApp';
 import { useTimelineUiStore } from '@/store/timelineUi';
 import { useTheme } from '@/theme';
 import { t } from '@/lib/i18n';
@@ -59,6 +63,15 @@ export default function RootLayout() {
       }
     })();
   }, [seedDefaultsIfNeeded, seedGeneralIfNeeded, refreshAll]);
+
+  useEffect(() => {
+    setPersistFailureListener((err) => {
+      const message =
+        err instanceof PersistError ? err.message : t.persistFailed;
+      Alert.alert(t.appName, message);
+    });
+    return () => setPersistFailureListener(null);
+  }, []);
 
   useEffect(() => {
     void Linking.getInitialURL().then((url) => {

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { addDays, subDays } from 'date-fns';
 import { selectVisibleItems } from '../src/lib/feeds/selectItems';
-import { dedupeItemsByLink } from '../src/lib/items/dedupeItems';
+import {
+  dedupeItemsByLink,
+  normalizeFeedUrl,
+} from '../src/lib/items/dedupeItems';
 import { isPublishedAtDisplayable } from '../src/lib/items/publishDate';
 import { sortItemsByPublishedDesc } from '../src/lib/items/sortItems';
 import { applyRetention } from '../src/lib/rss/fetchFeed';
@@ -35,20 +38,81 @@ import {
   GENERAL_FEED_CATALOG,
 } from '../src/data/feeds/catalogs';
 import type { FeedCatalog } from '../src/data/feeds/types';
-import legacyGeneralSeed from './fixtures/legacy-general-seed.json';
-import legacyComputingSeed from './fixtures/legacy-computing-seed.json';
 import { migrateBlob, mergeEngBlogsIntoBlob } from '../src/store/migrate';
 import {
   GOOGLE_DEVELOPERS_BLOG_OLD_URL,
   GOOGLE_DEVELOPERS_BLOG_URL,
 } from '../src/store/catalogRepairs';
-import { normalizeFeedUrl } from '../src/lib/items/dedupeItems';
 import type { FeedItem, FeedSource, Folder, PersistedBlob } from '../src/types';
-import { DEFAULT_SETTINGS } from '../src/types';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_SETTINGS } from '../src/types';
+import {
+  applySubscriptionIntent,
+  partitionFeedsByEnabled,
+} from '../src/lib/feeds/subscriptionIntent';
+import { getDefaultSpaces, resolveActiveSpaceId } from '../src/lib/spaces';
+import {
+  loadBlob,
+  saveBlob,
+  STORAGE_KEY,
+  type KeyValueStore,
+} from '../src/store/persistence';
+import { SUBS_META_KEY } from '../src/store/subsMeta';
 
-const LEGACY_GENERAL_CATALOG = legacyGeneralSeed as FeedCatalog;
-const LEGACY_COMPUTING_CATALOG = legacyComputingSeed as FeedCatalog;
+/** Minimal inline catalogs for mergeMissingSeedFeeds unit tests (no fixtures/). */
+const INLINE_GENERAL_CATALOG: FeedCatalog = {
+  folders: [
+    {
+      name: 'Portais',
+      feeds: [
+        {
+          title: 'CNN Brasil',
+          url: 'https://www.cnnbrasil.com.br/feed/',
+          siteUrl: 'https://www.cnnbrasil.com.br/',
+        },
+      ],
+    },
+    {
+      name: 'Cultura pop',
+      feeds: [
+        {
+          title: 'Contigo!',
+          url: 'https://www.contigo.com.br/feed/',
+          siteUrl: 'https://www.contigo.com.br/',
+        },
+      ],
+    },
+  ],
+};
 
+const INLINE_COMPUTING_CATALOG: FeedCatalog = {
+  folders: [
+    {
+      name: 'Comunidade',
+      feeds: [
+        {
+          title: 'Lobsters',
+          url: 'https://lobste.rs/rss',
+          siteUrl: 'https://lobste.rs/',
+        },
+      ],
+    },
+    {
+      name: 'Frontend',
+      feeds: [
+        {
+          title: 'React Blog',
+          url: 'https://react.dev/rss.xml',
+          siteUrl: 'https://react.dev/',
+        },
+        {
+          title: 'web.dev',
+          url: 'https://web.dev/feed.xml',
+          siteUrl: 'https://web.dev/',
+        },
+      ],
+    },
+  ],
+};
 function item(
   id: string,
   feedId: string,
@@ -361,6 +425,8 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     spaces: [],
     feeds: [],
     items: [],
+    readKeys: [],
+    starredItems: [],
     folders: [],
     tags: [],
     settings: {
@@ -385,7 +451,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     tags: [],
     settings: {},
   });
-  assert.equal(migrated.schemaVersion, 14);
+  assert.equal(migrated.schemaVersion, 17);
   assert.equal(migrated.settings.seededGeneral, true);
   assert.ok(Array.isArray(migrated.settings.removedFeedUrls));
   assert.ok(migrated.folders.some((f) => f.name === 'Portais'));
@@ -395,7 +461,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     'Caixa de entrada',
   );
   assert.ok(migrated.folders.some((f) => f.id === 'inbox:general'));
-  assert.equal(migrated.settings.activeSpaceId, 'computing');
+  assert.equal(migrated.settings.activeSpaceId, 'general');
 }
 
 // migrate v4 removes HN Newest; v9 keeps HN frontpage (main stories)
@@ -450,9 +516,8 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
     migrated.feeds.find((f) => f.id === 'hn-front')?.spaceId,
     'computing',
   );
-  assert.ok(migrated.items.some((i) => i.id === 'i1'));
-  assert.ok(migrated.items.some((i) => i.id === 'i3'));
-  assert.ok(!migrated.items.some((i) => i.id === 'i2'));
+  // Timeline is no longer persisted after slim schema.
+  assert.equal(migrated.items.length, 0);
 }
 
 // migrate v9 retires Folha SP, UOL Notícias, DW titulares, DEV (keeps DW seção + Folha PE)
@@ -583,7 +648,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   const merged = mergeMissingSeedFeeds(
     existingFolders,
     existingFeeds,
-    LEGACY_GENERAL_CATALOG,
+    INLINE_GENERAL_CATALOG,
     spaceId,
     { allowHttp: false },
   );
@@ -614,7 +679,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
         title: 'CNN Brasil',
       },
     ],
-    LEGACY_GENERAL_CATALOG,
+    INLINE_GENERAL_CATALOG,
     spaceId,
     {
       allowHttp: false,
@@ -744,7 +809,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
         title: 'Lobsters',
       },
     ],
-    LEGACY_COMPUTING_CATALOG,
+    INLINE_COMPUTING_CATALOG,
     'computing',
     { allowHttp: false },
   );
@@ -757,7 +822,7 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   const disabledUrl = 'https://g1.globo.com/dynamo/rss2.xml';
   const removedUrl = 'https://g1.globo.com/dynamo/globonews/rss2.xml';
   const migrated = migrateBlob({
-    schemaVersion: 14,
+    schemaVersion: 15,
     feeds: [
       {
         id: 'g1',
@@ -790,8 +855,40 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.ok(
     migrated.settings.removedFeedUrls.includes(normalizeFeedUrl(removedUrl)),
   );
-  // Public lean catalog is not re-merged on schema 14.
+  // Already on latest schema — lean public catalog is not re-merged.
   assert.equal(migrated.feeds.length, 1);
+}
+
+// migrate v15 merges missing public general seed feeds (Globo News)
+{
+  const migrated = migrateBlob({
+    schemaVersion: 14,
+    feeds: [
+      {
+        id: 'g1',
+        title: 'G1',
+        url: 'https://g1.globo.com/dynamo/rss2.xml',
+        spaceId: 'general',
+        folderIds: ['general-portais'],
+        tagIds: [],
+        enabled: true,
+      },
+    ],
+    items: [],
+    folders: [
+      {
+        id: 'general-portais',
+        name: 'Portais',
+        spaceId: 'general',
+        sortOrder: 0,
+      },
+    ],
+    tags: [],
+    settings: { seeded: true, seededGeneral: true },
+  });
+  assert.equal(migrated.schemaVersion, 17);
+  assert.ok(migrated.feeds.some((f) => /globonews/i.test(f.url)));
+  assert.ok(migrated.feeds.some((f) => f.id === 'g1'));
 }
 
 // public catalogs stay lean (2 example feeds each)
@@ -916,6 +1013,46 @@ function feed(id: string, folderIds: string[] | string = 'news'): FeedSource {
   assert.ok(!migrated.feeds.some((f) => f.id === 'hn-ai'));
   assert.ok(migrated.feeds.some((f) => f.url.includes('hnrss.org/frontpage')));
   assert.equal(migrated.items.length, 0);
+}
+
+// slim schema extracts read/star marks and drops the timeline snapshot
+{
+  const migrated = migrateBlob({
+    schemaVersion: 15,
+    feeds: [
+      {
+        id: 'f1',
+        title: 'F',
+        url: 'https://example.com/feed.xml',
+        spaceId: 'computing',
+        folderIds: ['inbox:computing'],
+        tagIds: [],
+        enabled: true,
+      },
+    ],
+    items: [
+      item('i1', 'f1', '2025-01-01T00:00:00.000Z', {
+        link: 'https://example.com/a',
+        read: true,
+      }),
+      item('i2', 'f1', '2025-01-02T00:00:00.000Z', {
+        link: 'https://example.com/b',
+        starred: true,
+        title: 'Star me',
+      }),
+    ],
+    folders: [],
+    tags: [],
+    settings: {},
+  });
+  assert.equal(migrated.schemaVersion, 17);
+  assert.equal(migrated.items.length, 0);
+  assert.ok(migrated.readKeys.some((k) => k.includes('example.com/a')));
+  assert.ok(migrated.starredItems.some((s) => s.id === 'i2'));
+  assert.equal(
+    migrated.starredItems.find((s) => s.id === 'i2')?.title,
+    'Star me',
+  );
 }
 
 // applyRefreshOntoCurrent preserves enabled/delete against stale refresh patches
@@ -1204,8 +1341,160 @@ async function testMergeRefreshResults() {
   assert.ok(feedInFolder(f, inboxId));
 }
 
+function memoryKv(
+  initial: Record<string, string> = {},
+): KeyValueStore & { removeCount: number } {
+  const data = new Map(Object.entries(initial));
+  let removeCount = 0;
+  const store: KeyValueStore & { removeCount: number } = {
+    get removeCount() {
+      return removeCount;
+    },
+    async getItem(key) {
+      return data.has(key) ? data.get(key)! : null;
+    },
+    async setItem(key, value) {
+      data.set(key, value);
+    },
+    async removeItem(key) {
+      removeCount += 1;
+      data.delete(key);
+    },
+  };
+  return store;
+}
+
+// schema 16 → 17 does not re-merge catalog; collects disabled URLs; lands on Geral
+{
+  const disabledUrl = 'https://g1.globo.com/dynamo/rss2.xml';
+  const migrated = migrateBlob({
+    schemaVersion: 16,
+    feeds: [
+      {
+        id: 'g1',
+        title: 'G1',
+        url: disabledUrl,
+        spaceId: 'general',
+        folderIds: ['general-portais'],
+        tagIds: [],
+        enabled: false,
+      },
+    ],
+    items: [],
+    folders: [
+      {
+        id: 'general-portais',
+        name: 'Portais',
+        spaceId: 'general',
+        sortOrder: 0,
+      },
+    ],
+    tags: [],
+    settings: {
+      seeded: true,
+      seededGeneral: true,
+      activeSpaceId: 'computing',
+    },
+  });
+  assert.equal(migrated.schemaVersion, CURRENT_SCHEMA_VERSION);
+  assert.equal(migrated.feeds.length, 1);
+  assert.equal(migrated.feeds[0]?.enabled, false);
+  assert.ok(
+    migrated.settings.disabledFeedUrls.includes(normalizeFeedUrl(disabledUrl)),
+  );
+  assert.equal(migrated.settings.activeSpaceId, 'general');
+}
+
+// seeded empty list is not re-filled from catalog
+{
+  const migrated = migrateBlob({
+    schemaVersion: 16,
+    feeds: [],
+    items: [],
+    folders: [],
+    tags: [],
+    settings: { seeded: true, seededGeneral: true, activeSpaceId: 'computing' },
+  });
+  assert.equal(migrated.feeds.length, 0);
+  assert.equal(migrated.settings.seeded, true);
+  assert.equal(migrated.settings.seededGeneral, true);
+}
+
+// applySubscriptionIntent drops removed URLs, disables tombstoned, dedupes
+{
+  const url = 'https://example.com/feed.xml';
+  const feeds: FeedSource[] = [
+    { ...feed('a', 'news'), url, enabled: true },
+    { ...feed('b', 'news'), url, enabled: false },
+    {
+      ...feed('c', 'news'),
+      url: 'https://gone.example.com/rss.xml',
+      enabled: true,
+    },
+  ];
+  const next = applySubscriptionIntent(feeds, {
+    removedFeedUrls: [normalizeFeedUrl('https://gone.example.com/rss.xml')],
+    disabledFeedUrls: [normalizeFeedUrl(url)],
+  });
+  assert.equal(next.length, 1);
+  assert.equal(next[0]?.enabled, false);
+  assert.ok(['a', 'b'].includes(next[0]?.id ?? ''));
+}
+
+{
+  const split = partitionFeedsByEnabled([
+    feed('on', 'news'),
+    { ...feed('off', 'news'), enabled: false },
+  ]);
+  assert.equal(split.active.length, 1);
+  assert.equal(split.inactive.length, 1);
+  assert.equal(split.active[0]?.id, 'on');
+}
+
+{
+  assert.equal(DEFAULT_SETTINGS.activeSpaceId, 'general');
+  assert.equal(getDefaultSpaces()[0]?.id, 'general');
+  assert.equal(resolveActiveSpaceId(undefined, getDefaultSpaces()), 'general');
+  assert.equal(resolveActiveSpaceId('nope', getDefaultSpaces()), 'general');
+}
+
+async function testPersistKeepsLastBlob(): Promise<void> {
+  const store = memoryKv({ [STORAGE_KEY]: 'keep-me' });
+  const failing: KeyValueStore = {
+    getItem: (key) => store.getItem(key),
+    removeItem: (key) => store.removeItem(key),
+    setItem: async () => {
+      const err = new Error('quota');
+      err.name = 'QuotaExceededError';
+      throw err;
+    },
+  };
+  await assert.rejects(() => saveBlob(migrateBlob(null), failing));
+  assert.equal(await store.getItem(STORAGE_KEY), 'keep-me');
+  assert.equal(store.removeCount, 0);
+}
+
+async function testSidecarPreventsReseed(): Promise<void> {
+  const g1 = normalizeFeedUrl('https://g1.globo.com/dynamo/rss2.xml');
+  const store = memoryKv({
+    [SUBS_META_KEY]: JSON.stringify({
+      seeded: true,
+      seededGeneral: true,
+      removedFeedUrls: [g1],
+      disabledFeedUrls: [],
+    }),
+  });
+  const blob = await loadBlob(store);
+  assert.equal(blob.settings.seeded, true);
+  assert.equal(blob.settings.seededGeneral, true);
+  assert.ok(blob.settings.removedFeedUrls.includes(g1));
+  assert.equal(blob.feeds.length, 0);
+}
+
 void testMergeRefreshResults()
   .then(() => testRetryOn403Option())
+  .then(() => testPersistKeepsLastBlob())
+  .then(() => testSidecarPreventsReseed())
   .then(() => {
     console.log('All unit tests passed.');
   })

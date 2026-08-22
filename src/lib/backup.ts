@@ -10,6 +10,7 @@ import { useFeedsStore } from '../store/feeds';
 import { feedInFolder } from './feeds/feedFolders';
 import { flattenOpmlFeeds, parseOpml, serializeOpml } from './opml';
 import { assertImportFileSize, capFeedInputs } from './security/importLimits';
+import { hydrateItemsFromMarks } from './items/itemMarks';
 import { t } from './i18n';
 import { resolveActiveSpaceId } from './spaces';
 
@@ -35,7 +36,9 @@ export async function buildExportBlob(): Promise<PersistedBlob> {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     spaces: feedsState.spaces,
     feeds: feedsState.feeds,
-    items: feedsState.items,
+    items: [],
+    readKeys: feedsState.readKeys,
+    starredItems: feedsState.starredItems,
     folders: feedsState.folders,
     tags: feedsState.tags,
     settings,
@@ -96,9 +99,15 @@ export async function importBackupJson(): Promise<BackupResult> {
     await useFeedsStore.getState().replaceAll({
       spaces: blob.spaces,
       feeds: blob.feeds,
-      items: blob.items,
+      items: hydrateItemsFromMarks(
+        blob.starredItems,
+        blob.readKeys,
+        blob.feeds,
+      ),
       folders: blob.folders,
       tags: blob.tags,
+      readKeys: blob.readKeys,
+      starredItems: blob.starredItems,
     });
     await useSettingsStore.getState().update(blob.settings);
     return { ok: true, message: t.backupImported };

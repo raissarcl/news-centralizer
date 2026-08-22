@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { DEFAULT_SETTINGS, type Settings } from '../types';
-import { hydrateApp, persistApp } from './persistApp';
+import { hydrateApp, runPersistedMutation } from './persistApp';
 
 type SettingsState = {
   settings: Settings;
@@ -16,7 +16,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await hydrateApp();
   },
   update: async (patch) => {
-    set({ settings: { ...get().settings, ...patch } });
-    await persistApp();
+    await runPersistedMutation(() => {
+      set({ settings: { ...get().settings, ...patch } });
+    });
   },
 }));
