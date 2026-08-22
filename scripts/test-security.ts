@@ -23,10 +23,7 @@ function testUrls() {
   assert.equal(validateFeedUrl('https://user:pass@example.com/feed').ok, false);
   assert.equal(validateFeedUrl('https://127.0.0.1/feed').ok, false);
   assert.equal(validateFeedUrl('https://169.254.169.254/latest').ok, false);
-  assert.equal(
-    validateFeedUrl('https://metadata.google.internal/').ok,
-    false,
-  );
+  assert.equal(validateFeedUrl('https://metadata.google.internal/').ok, false);
   assert.equal(validateFeedUrl('https://2130706433/feed').ok, false);
   assert.equal(validateFeedUrl('https://[::ffff:127.0.0.1]/feed').ok, false);
 
